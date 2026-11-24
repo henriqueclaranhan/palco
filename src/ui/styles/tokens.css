@@ -1,0 +1,139 @@
+:root {
+  --bg-stage-light: #f3f4f6;
+  --bg-stage-dark: #101214;
+  --bg-surface-light: #ffffff;
+  --bg-surface-dark: #181b1f;
+  --bg-elevated-light: #eceff3;
+  --bg-elevated-dark: #22262c;
+  --bg-hover-light: #e2e6ec;
+  --bg-hover-dark: #2b3038;
+
+  --border-subtle-light: rgba(16, 18, 20, 0.1);
+  --border-subtle-dark: rgba(242, 244, 247, 0.09);
+  --border-strong-light: rgba(16, 18, 20, 0.2);
+  --border-strong-dark: rgba(242, 244, 247, 0.18);
+
+  --ink-primary-light: #101214;
+  --ink-primary-dark: #f2f4f7;
+  --ink-secondary-light: #3f4652;
+  --ink-secondary-dark: #b9c1cc;
+  --ink-muted-light: #5c6574;
+  --ink-muted-dark: #8e97a4;
+
+  --accent-light: #0f766e;
+  --accent-dark: #2dd4bf;
+  --accent-hover-light: #115e59;
+  --accent-hover-dark: #4be3cf;
+  --accent-soft-light: rgba(15, 118, 110, 0.12);
+  --accent-soft-dark: rgba(45, 212, 191, 0.14);
+  --accent-ink-light: #ffffff;
+  --accent-ink-dark: #082320;
+
+  --danger-light: #dc2626;
+  --danger-dark: #f87171;
+  --danger-soft-light: rgba(220, 38, 38, 0.1);
+  --danger-soft-dark: rgba(248, 113, 113, 0.14);
+
+  --dock-bg-light: rgba(255, 255, 255, 0.92);
+  --dock-bg-dark: rgba(24, 27, 31, 0.92);
+  --preview-stage-bg-light: #e6e9ef;
+  --preview-stage-bg-dark: #131619;
+  --backdrop-bg-light: rgba(16, 18, 20, 0.45);
+  --backdrop-bg-dark: rgba(8, 10, 12, 0.76);
+
+  --bg-stage: var(--bg-stage-light);
+  --bg-surface: var(--bg-surface-light);
+  --bg-elevated: var(--bg-elevated-light);
+  --bg-hover: var(--bg-hover-light);
+  --border-subtle: var(--border-subtle-light);
+  --border-strong: var(--border-strong-light);
+  --ink-primary: var(--ink-primary-light);
+  --ink-secondary: var(--ink-secondary-light);
+  --ink-muted: var(--ink-muted-light);
+  --accent: var(--accent-light);
+  --accent-hover: var(--accent-hover-light);
+  --accent-soft: var(--accent-soft-light);
+  --accent-ink: var(--accent-ink-light);
+  --danger: var(--danger-light);
+  --danger-soft: var(--danger-soft-light);
+  --dock-bg: var(--dock-bg-light);
+  --preview-stage-bg: var(--preview-stage-bg-light);
+  --backdrop-bg: var(--backdrop-bg-light);
+
+  @media (prefers-color-scheme: dark) {
+    --bg-stage: var(--bg-stage-dark);
+    --bg-surface: var(--bg-surface-dark);
+    --bg-elevated: var(--bg-elevated-dark);
+    --bg-hover: var(--bg-hover-dark);
+    --border-subtle: var(--border-subtle-dark);
+    --border-strong: var(--border-strong-dark);
+    --ink-primary: var(--ink-primary-dark);
+    --ink-secondary: var(--ink-secondary-dark);
+    --ink-muted: var(--ink-muted-dark);
+    --accent: var(--accent-dark);
+    --accent-hover: var(--accent-hover-dark);
+    --accent-soft: var(--accent-soft-dark);
+    --accent-ink: var(--accent-ink-dark);
+    --danger: var(--danger-dark);
+    --danger-soft: var(--danger-soft-dark);
+    --dock-bg: var(--dock-bg-dark);
+    --preview-stage-bg: var(--preview-stage-bg-dark);
+    --backdrop-bg: var(--backdrop-bg-dark);
+  }
+
+  @supports (color: light-dark(white, black)) {
+    --bg-stage: light-dark(var(--bg-stage-light), var(--bg-stage-dark));
+    --bg-surface: light-dark(var(--bg-surface-light), var(--bg-surface-dark));
+    --bg-elevated: light-dark(var(--bg-elevated-light), var(--bg-elevated-dark));
+    --bg-hover: light-dark(var(--bg-hover-light), var(--bg-hover-dark));
+    --border-subtle: light-dark(var(--border-subtle-light), var(--border-subtle-dark));
+    --border-strong: light-dark(var(--border-strong-light), var(--border-strong-dark));
+    --ink-primary: light-dark(var(--ink-primary-light), var(--ink-primary-dark));
+    --ink-secondary: light-dark(var(--ink-secondary-light), var(--ink-secondary-dark));
+    --ink-muted: light-dark(var(--ink-muted-light), var(--ink-muted-dark));
+    --accent: light-dark(var(--accent-light), var(--accent-dark));
+    --accent-hover: light-dark(var(--accent-hover-light), var(--accent-hover-dark));
+    --accent-soft: light-dark(var(--accent-soft-light), var(--accent-soft-dark));
+    --accent-ink: light-dark(var(--accent-ink-light), var(--accent-ink-dark));
+    --danger: light-dark(var(--danger-light), var(--danger-dark));
+    --danger-soft: light-dark(var(--danger-soft-light), var(--danger-soft-dark));
+    --dock-bg: light-dark(var(--dock-bg-light), var(--dock-bg-dark));
+    --preview-stage-bg: light-dark(
+      var(--preview-stage-bg-light),
+      var(--preview-stage-bg-dark)
+    );
+    --backdrop-bg: light-dark(var(--backdrop-bg-light), var(--backdrop-bg-dark));
+  }
+
+  color-scheme: light dark;
+
+  &:has(> head > meta[name='color-scheme'][content='dark']) {
+    color-scheme: dark;
+  }
+
+  &:has(> head > meta[name='color-scheme'][content='light']) {
+    color-scheme: light;
+  }
+
+  accent-color: var(--accent);
+
+  --font-display: 'Bricolage Grotesque', system-ui, -apple-system, sans-serif;
+  --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-pill: 9999px;
+
+  --target-size: 36px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 150ms;
+  --duration-base: 240ms;
+}
+
+@media (pointer: coarse) {
+  :root {
+    --target-size: 44px;
+  }
+}

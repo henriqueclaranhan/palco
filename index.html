@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <script>
+    try {
+      var saved = localStorage.getItem('color-scheme');
+      if (saved === 'light' || saved === 'dark') {
+        document.querySelector('meta[name="color-scheme"]').content = saved;
+      }
+    } catch (e) {}
+  </script>
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3f4f6" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#101214" />
+  <meta name="description"
+    content="Coapresente PDFs em tempo real sem login e sem armazenar arquivos na nuvem. Um link temporário que vive apenas enquanto a apresentação estiver aberta." />
+  <title>Palco | Coapresentação de PDFs em tempo real</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap"
+    rel="stylesheet" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <style>
+    .skip-link {
+      position: fixed;
+      top: 0.75rem;
+      left: 0.75rem;
+      transform: translateY(-200%);
+    }
+  </style>
+</head>
+
+<body>
+  <a class="skip-link" href="#main-content">Ir para o conteúdo principal</a>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
+</html>

@@ -1,0 +1,130 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: 0.92rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-decoration: none;
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .btn {
+    transition-property: background-color, border-color, color, transform, opacity;
+    transition-duration: var(--duration-fast);
+    transition-timing-function: var(--ease-out);
+  }
+}
+
+.btn:active:not([aria-disabled='true']):not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn[aria-disabled='true'],
+.btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+@media (hover: hover) {
+  .btn-primary:hover:not([aria-disabled='true']):not(:disabled) {
+    background-color: var(--accent-hover);
+  }
+}
+
+.btn-surface {
+  background-color: var(--bg-elevated);
+  border-color: var(--border-subtle);
+  color: var(--ink-primary);
+}
+
+@media (hover: hover) {
+  .btn-surface:hover:not([aria-disabled='true']):not(:disabled) {
+    background-color: var(--bg-hover);
+    border-color: var(--border-strong);
+  }
+}
+
+.btn-ghost {
+  color: var(--ink-secondary);
+}
+
+@media (hover: hover) {
+  .btn-ghost:hover:not([aria-disabled='true']):not(:disabled) {
+    background-color: var(--bg-elevated);
+    color: var(--ink-primary);
+  }
+}
+
+.btn-danger {
+  background-color: var(--danger-soft);
+  border-color: rgba(248, 113, 113, 0.28);
+  color: var(--danger);
+}
+
+@media (hover: hover) {
+  .btn-danger:hover:not([aria-disabled='true']):not(:disabled) {
+    background-color: rgba(248, 113, 113, 0.22);
+    border-color: rgba(248, 113, 113, 0.45);
+  }
+}
+
+.btn-danger-outline {
+  background-color: transparent;
+  border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+  color: var(--danger);
+}
+
+@media (hover: hover) {
+  .btn-danger-outline:hover:not([aria-disabled='true']):not(:disabled) {
+    background-color: var(--danger-soft);
+    border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  }
+}
+
+.btn-compact {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.btn-icon {
+  padding: 0.45rem;
+}
+
+.btn[aria-pressed='true'] {
+  background-color: var(--accent-soft);
+  border-color: rgba(45, 212, 191, 0.45);
+  color: var(--accent);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -0.03em;
+  color: var(--ink-primary);
+  text-decoration: none;
+}
+
+.brand-icon {
+  display: grid;
+  place-items: center;
+  inline-size: 28px;
+  block-size: 28px;
+  flex-shrink: 0;
+}

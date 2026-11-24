@@ -1,0 +1,36 @@
+# Dependencies
+node_modules
+
+# Build & caches
+dist
+dist-ssr
+*.tsbuildinfo
+.vite
+coverage
+
+# Deploy
+.vercel
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor & OS
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+.agents
