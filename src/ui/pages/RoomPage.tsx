@@ -6,6 +6,7 @@ import { usePresentationSession } from '@/application/usePresentationSession';
 import { useFullscreen } from '@/application/useFullscreen';
 import { useKeyboardAndSwipe } from '@/application/useKeyboardAndSwipe';
 import { useToasts } from '@/application/useToasts';
+import { formatRoomTitle, useDocumentMeta } from '@/application/useDocumentMeta';
 import { TopBar } from '@/ui/components/TopBar';
 import { PdfStage } from '@/ui/components/PdfStage';
 import { StageOverlay } from '@/ui/components/StageOverlay';
@@ -40,6 +41,11 @@ export function RoomPage({
       initialFile,
       onNotice: pushToast,
     });
+
+  useDocumentMeta(
+    formatRoomTitle(roomCode, state.document?.fileName),
+    'noindex, nofollow'
+  );
 
   const { isFullscreen, isPseudoFullscreen, toggleFullscreen, exitFullscreen } =
     useFullscreen(shellRef);

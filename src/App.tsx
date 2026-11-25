@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import {
   generateRoomCode,
   isValidRoomCode,
@@ -9,8 +9,16 @@ import {
   clearHostReloadState,
   isHostTabForRoom,
 } from '@/infrastructure/ephemeralHostStore';
+import {
+  DEFAULT_DOCUMENT_TITLE,
+  formatRoomTitle,
+  useDocumentMeta,
+} from '@/application/useDocumentMeta';
 import { HomePage } from '@/ui/pages/HomePage';
-import { RoomPage } from '@/ui/pages/RoomPage';
+
+const RoomPage = lazy(() =>
+  import('@/ui/pages/RoomPage').then((module) => ({ default: module.RoomPage }))
+);
 
 type RouteState =
   | { view: 'home' }
@@ -40,6 +48,11 @@ function parseInitialRoute(): RouteState {
 
 export function App() {
   const [route, setRoute] = useState<RouteState>(parseInitialRoute);
+
+  useDocumentMeta(
+    route.view === 'home' ? DEFAULT_DOCUMENT_TITLE : formatRoomTitle(route.roomCode),
+    route.view === 'home' ? 'index, follow' : 'noindex, nofollow'
+  );
 
   useEffect(() => {
     if (route.view === 'home') {
@@ -78,12 +91,20 @@ export function App() {
   }
 
   return (
-    <RoomPage
-      key={`${route.role}-${route.roomCode}`}
-      role={route.role}
-      roomCode={route.roomCode}
-      initialFile={route.initialFile}
-      onLeaveToHome={handleLeaveToHome}
-    />
+    <Suspense
+      fallback={
+        <div className="room-shell">
+          <main id="main-content" className="stage-container" aria-busy="true" />
+        </div>
+      }
+    >
+      <RoomPage
+        key={`${route.role}-${route.roomCode}`}
+        role={route.role}
+        roomCode={route.roomCode}
+        initialFile={route.initialFile}
+        onLeaveToHome={handleLeaveToHome}
+      />
+    </Suspense>
   );
 }

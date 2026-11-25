@@ -1,0 +1,24 @@
+{
+  "name": "Palco | Coapresentação de PDFs em tempo real",
+  "short_name": "Palco",
+  "description": "Apresente PDFs em grupo em tempo real com um link temporário, sem login e sem nuvem.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#101214",
+  "theme_color": "#0f766e",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

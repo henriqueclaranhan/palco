@@ -15,15 +15,69 @@
   </script>
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3f4f6" />
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#101214" />
+  <meta name="application-name" content="Palco" />
+  <meta name="robots" content="index, follow" />
   <meta name="description"
-    content="Coapresente PDFs em tempo real sem login e sem armazenar arquivos na nuvem. Um link temporário que vive apenas enquanto a apresentação estiver aberta." />
+    content="Apresente PDFs em grupo sem dizer “pode passar o slide”. Envie um link temporário ou QR Code e controle os slides em tempo real, sem login e sem nuvem." />
   <title>Palco | Coapresentação de PDFs em tempo real</title>
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Palco" />
+  <meta property="og:locale" content="pt_BR" />
+  <meta property="og:title" content="Palco | Coapresentação de PDFs em tempo real" />
+  <meta property="og:description"
+    content="Chega de dizer “pode passar o slide”. Abra seu PDF, envie um link temporário e controle a apresentação em tempo real, sem login e sem nuvem." />
+  <meta property="og:image" content="/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt"
+    content="Palco: Coapresentação de PDFs em tempo real, sem login e sem armazenar arquivos na nuvem" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Palco | Coapresentação de PDFs em tempo real" />
+  <meta name="twitter:description"
+    content="Chega de dizer “pode passar o slide”. Abra seu PDF, envie um link temporário e controle a apresentação em tempo real, sem login e sem nuvem." />
+  <meta name="twitter:image" content="/og-image.png" />
+  <meta name="twitter:image:alt"
+    content="Palco: Coapresentação de PDFs em tempo real, sem login e sem armazenar arquivos na nuvem" />
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap"
     rel="stylesheet" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Palco",
+      "alternateName": "Palco Coapresentação",
+      "description": "Apresente PDFs em grupo sem dizer “pode passar o slide”. Envie um link temporário ou QR Code e controle os slides em tempo real, sem login e sem nuvem.",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "All",
+      "browserRequirements": "Requires JavaScript, HTML5, and WebRTC.",
+      "inLanguage": "pt-BR",
+      "isAccessibleForFree": true,
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "BRL"
+      },
+      "featureList": [
+        "Coapresentação de PDFs em tempo real",
+        "Transferência direta P2P via WebRTC sem armazenar arquivos na nuvem",
+        "Link temporário e QR Code que expiram ao fechar a sala",
+        "Sem cadastro ou login",
+        "Modo tela cheia e navegação por gestos no desktop e mobile"
+      ]
+    }
+  </script>
+
   <style>
     .skip-link {
       position: fixed;
@@ -31,12 +85,36 @@
       left: 0.75rem;
       transform: translateY(-200%);
     }
+
+    .noscript-fallback {
+      max-width: 36rem;
+      margin: 4rem auto;
+      padding: 1.5rem;
+      font-family:
+        system-ui,
+        -apple-system,
+        sans-serif;
+      line-height: 1.6;
+    }
   </style>
 </head>
 
 <body>
   <a class="skip-link" href="#main-content">Ir para o conteúdo principal</a>
   <div id="root"></div>
+  <noscript>
+    <main class="noscript-fallback">
+      <h1>Palco | Coapresentação de PDFs em tempo real</h1>
+      <p>
+        Apresente arquivos PDF em grupo sem login e sem enviar documentos para a
+        nuvem. Abra seu PDF, compartilhe um link temporário ou QR Code e avance os
+        slides em tempo real direto no navegador.
+      </p>
+      <p>
+        Ative o JavaScript no navegador para iniciar ou entrar em uma apresentação.
+      </p>
+    </main>
+  </noscript>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 
