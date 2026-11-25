@@ -13,6 +13,7 @@ import { StageOverlay } from '@/ui/components/StageOverlay';
 import { PresenterToolbar } from '@/ui/components/PresenterToolbar';
 import { InviteDialog } from '@/ui/components/InviteDialog';
 import { ConfirmDialog } from '@/ui/components/ConfirmDialog';
+import { PasswordDialog } from '@/ui/components/PasswordDialog';
 import { ToastRegion } from '@/ui/components/ToastRegion';
 
 interface RoomPageProps {
@@ -34,13 +35,23 @@ export function RoomPage({
 
   const { toasts, pushToast, dismissToast } = useToasts();
 
-  const { state, engine, loadHostFile, nextPage, prevPage, goToPage, endSession } =
-    usePresentationSession({
-      role,
-      roomCode,
-      initialFile,
-      onNotice: pushToast,
-    });
+  const {
+    state,
+    engine,
+    passwordRequest,
+    loadHostFile,
+    submitPdfPassword,
+    cancelPdfPassword,
+    nextPage,
+    prevPage,
+    goToPage,
+    endSession,
+  } = usePresentationSession({
+    role,
+    roomCode,
+    initialFile,
+    onNotice: pushToast,
+  });
 
   useDocumentMeta(
     formatRoomTitle(roomCode, state.document?.fileName),
@@ -60,7 +71,7 @@ export function RoomPage({
     state.status !== 'transferring';
 
   const { swipeHandlers } = useKeyboardAndSwipe({
-    enabled: hasRenderableDoc,
+    enabled: hasRenderableDoc && !passwordRequest,
     totalPages,
     onNext: nextPage,
     onPrev: prevPage,
@@ -181,6 +192,15 @@ export function RoomPage({
           />
         </>
       )}
+
+      <PasswordDialog
+        open={Boolean(passwordRequest)}
+        fileName={passwordRequest?.fileName ?? ''}
+        errorMessage={passwordRequest?.errorMessage ?? null}
+        submitting={passwordRequest?.submitting ?? false}
+        onSubmit={(password) => void submitPdfPassword(password)}
+        onCancel={cancelPdfPassword}
+      />
 
       {!isFullscreen && <ToastRegion toasts={toasts} onDismiss={dismissToast} />}
     </div>

@@ -7,6 +7,7 @@ import {
 } from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { LruPageCache, type RenderedPageEntry } from './pageCache';
+import { classifyPdfLoadError } from '@/domain/pdfErrors';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -20,30 +21,64 @@ const MAX_DEVICE_PIXEL_RATIO = 2.25;
 const PREFETCH_DELAY_MS = 180;
 const SLIDE_BACKGROUND_COLOR = '#FFFFFF';
 
+export interface PdfLoadOptions {
+  password?: string;
+}
+
 export class PdfEngine {
   private loadingTask: PDFDocumentLoadingTask | null = null;
+  private pendingLoadTask: PDFDocumentLoadingTask | null = null;
   private doc: PDFDocumentProxy | null = null;
   private activeRenderTask: RenderTask | null = null;
   private readonly cache = new LruPageCache(MAX_CACHE_PAGES);
   private prefetchTimer: number | null = null;
   private docVersion = 0;
 
-  async load(bytes: Uint8Array): Promise<number> {
+  async load(bytes: Uint8Array, options?: PdfLoadOptions): Promise<number> {
+    if (this.pendingLoadTask) {
+      const stale = this.pendingLoadTask;
+      this.pendingLoadTask = null;
+      void stale.destroy().catch(() => undefined);
+    }
+
+    // copy buffer since pdf.js transfers it to the worker and detaches the original
+    const dataCopy = bytes.slice();
+    const loadingTask = getDocument({
+      data: dataCopy,
+      password: options?.password,
+      useSystemFonts: true,
+    });
+    this.pendingLoadTask = loadingTask;
+
+    let doc: PDFDocumentProxy;
+    try {
+      doc = await loadingTask.promise;
+    } catch (err) {
+      if (this.pendingLoadTask === loadingTask) {
+        this.pendingLoadTask = null;
+      }
+      void loadingTask.destroy().catch(() => undefined);
+      throw classifyPdfLoadError(err);
+    }
+
+    if (this.pendingLoadTask !== loadingTask) {
+      void loadingTask.destroy().catch(() => undefined);
+      return doc.numPages;
+    }
+
+    this.pendingLoadTask = null;
     this.cancelPendingWork();
     this.cache.clear();
     this.docVersion += 1;
 
     if (this.loadingTask) {
-      await this.loadingTask.destroy();
+      const previous = this.loadingTask;
       this.loadingTask = null;
       this.doc = null;
+      await previous.destroy().catch(() => undefined);
     }
 
-    // copy buffer since pdf.js transfers it to the worker and detaches the original
-    const dataCopy = bytes.slice();
-    const loadingTask = getDocument({ data: dataCopy, useSystemFonts: true });
     this.loadingTask = loadingTask;
-    const doc = await loadingTask.promise;
     this.doc = doc;
     return doc.numPages;
   }
@@ -88,8 +123,12 @@ export class PdfEngine {
     this.cancelPendingWork();
     this.cache.clear();
     this.docVersion += 1;
+    if (this.pendingLoadTask) {
+      void this.pendingLoadTask.destroy().catch(() => undefined);
+      this.pendingLoadTask = null;
+    }
     if (this.loadingTask) {
-      void this.loadingTask.destroy();
+      void this.loadingTask.destroy().catch(() => undefined);
       this.loadingTask = null;
     }
     this.doc = null;

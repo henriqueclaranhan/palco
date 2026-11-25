@@ -28,6 +28,45 @@
   font-weight: 600;
 }
 
+.modal-title-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.password-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.password-input-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.password-input {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background-color: var(--bg-stage);
+  color: var(--ink-primary);
+  font-size: max(1rem, 1em);
+}
+
+.password-input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.password-error {
+  font-size: 0.86rem;
+  color: var(--danger);
+  font-weight: 500;
+}
+
 .modal-body {
   padding: 1.25rem 1.4rem;
   display: flex;

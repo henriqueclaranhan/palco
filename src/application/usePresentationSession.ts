@@ -15,6 +15,12 @@ import {
   type PeerMessage,
 } from '@/domain/protocol';
 import { validatePdfFile } from '@/domain/pdfValidation';
+import {
+  PdfLoadError,
+  classifyPdfLoadError,
+  getGuestPdfErrorMessage,
+  getHostPdfErrorMessage,
+} from '@/domain/pdfErrors';
 import { PdfChunkAssembler } from '@/domain/chunker';
 import {
   clampPage,
@@ -47,6 +53,31 @@ interface HostDocumentBuffer {
   totalPages: number;
 }
 
+export interface PasswordRequest {
+  fileName: string;
+  errorMessage: string | null;
+  submitting: boolean;
+}
+
+type PendingPasswordDoc =
+  | {
+      source: 'host';
+      fileName: string;
+      bytes: Uint8Array;
+      startPage: number;
+      showToast: boolean;
+    }
+  | {
+      source: 'guest';
+      header: {
+        docId: string;
+        fileName: string;
+        byteLength: number;
+        initialPage: number;
+      };
+      bytes: Uint8Array;
+    };
+
 export interface UsePresentationSessionOptions {
   role: ParticipantRole;
   roomCode: string;
@@ -63,6 +94,7 @@ export function usePresentationSession({
   const [state, setState] = useState<SessionState>(() =>
     createInitialSessionState(role, roomCode)
   );
+  const [passwordRequest, setPasswordRequest] = useState<PasswordRequest | null>(null);
 
   const engineRef = useRef<PdfEngine | null>(null);
   if (!engineRef.current) {
@@ -72,6 +104,7 @@ export function usePresentationSession({
   const hostTransportRef = useRef<HostTransport | null>(null);
   const guestTransportRef = useRef<GuestTransport | null>(null);
   const hostDocRef = useRef<HostDocumentBuffer | null>(null);
+  const pendingPasswordDocRef = useRef<PendingPasswordDoc | null>(null);
   const assemblerRef = useRef<PdfChunkAssembler | null>(null);
   const transferAbortRef = useRef<AbortController | null>(null);
   const fileLoadSeqRef = useRef(0);
@@ -116,12 +149,16 @@ export function usePresentationSession({
       fileName: string,
       bytes: Uint8Array,
       startPage: number,
-      showToast: boolean
+      showToast: boolean,
+      password?: string
     ) => {
       const loadSeq = ++fileLoadSeqRef.current;
       try {
-        const totalPages = await engineRef.current!.load(bytes);
+        const totalPages = await engineRef.current!.load(bytes, { password });
         if (loadSeq !== fileLoadSeqRef.current) return;
+
+        pendingPasswordDocRef.current = null;
+        setPasswordRequest(null);
 
         const docId = generateDocumentId();
         const safePage = clampPage(startPage, totalPages);
@@ -154,15 +191,131 @@ export function usePresentationSession({
         if (showToast && loadSeq === fileLoadSeqRef.current) {
           notify(`Documento carregado: ${fileName}`);
         }
-      } catch {
+      } catch (err) {
         if (loadSeq !== fileLoadSeqRef.current) return;
-        notify(
-          'Não foi possível abrir este PDF. Verifique se o arquivo não está corrompido ou protegido por senha.'
-        );
+        const classified = classifyPdfLoadError(err);
+
+        if (
+          classified.code === 'password_required' ||
+          classified.code === 'password_incorrect'
+        ) {
+          pendingPasswordDocRef.current = {
+            source: 'host',
+            fileName,
+            bytes,
+            startPage,
+            showToast,
+          };
+          setPasswordRequest({
+            fileName,
+            errorMessage:
+              classified.code === 'password_incorrect' ? classified.message : null,
+            submitting: false,
+          });
+          return;
+        }
+
+        pendingPasswordDocRef.current = null;
+        setPasswordRequest(null);
+        notify(getHostPdfErrorMessage(classified));
       }
     },
     [roomCode, broadcastDocumentToPeers, notify]
   );
+
+  const submitPdfPassword = useCallback(
+    async (password: string) => {
+      const pending = pendingPasswordDocRef.current;
+      if (!pending) return;
+
+      setPasswordRequest((prev) =>
+        prev ? { ...prev, errorMessage: null, submitting: true } : null
+      );
+
+      if (pending.source === 'host') {
+        await loadHostBytes(
+          pending.fileName,
+          pending.bytes,
+          pending.startPage,
+          pending.showToast,
+          password
+        );
+        return;
+      }
+
+      const loadSeq = ++fileLoadSeqRef.current;
+      try {
+        const totalPages = await engineRef.current!.load(pending.bytes, { password });
+        if (loadSeq !== fileLoadSeqRef.current) return;
+
+        pendingPasswordDocRef.current = null;
+        setPasswordRequest(null);
+
+        setState((prev) => ({
+          ...prev,
+          status: 'synced',
+          transferProgress: 1,
+          document: {
+            docId: pending.header.docId,
+            fileName: pending.header.fileName,
+            byteLength: pending.header.byteLength,
+            totalPages,
+          },
+          currentPage: clampPage(pending.header.initialPage, totalPages),
+          revision: prev.revision + 1,
+          lastUpdatedBy: 'host',
+          errorMessage: null,
+        }));
+        notify(`PDF sincronizado: ${pending.header.fileName}`);
+      } catch (err) {
+        if (loadSeq !== fileLoadSeqRef.current) return;
+        const classified = classifyPdfLoadError(err);
+
+        if (
+          classified.code === 'password_required' ||
+          classified.code === 'password_incorrect'
+        ) {
+          setPasswordRequest({
+            fileName: pending.header.fileName,
+            errorMessage:
+              classified.code === 'password_incorrect'
+                ? classified.message
+                : 'Digite a senha para desbloquear este PDF.',
+            submitting: false,
+          });
+          return;
+        }
+
+        pendingPasswordDocRef.current = null;
+        setPasswordRequest(null);
+        setState((prev) => ({
+          ...prev,
+          status: 'error',
+          errorMessage: getGuestPdfErrorMessage(classified),
+        }));
+      }
+    },
+    [loadHostBytes, notify]
+  );
+
+  const cancelPdfPassword = useCallback(() => {
+    const pending = pendingPasswordDocRef.current;
+    pendingPasswordDocRef.current = null;
+    setPasswordRequest(null);
+    if (!pending) return;
+
+    const passwordError = new PdfLoadError('password_required', '');
+    if (pending.source === 'host') {
+      notify(getHostPdfErrorMessage(passwordError));
+      return;
+    }
+
+    setState((prev) => ({
+      ...prev,
+      status: 'error',
+      errorMessage: getGuestPdfErrorMessage(passwordError),
+    }));
+  }, [notify]);
 
   const loadHostFile = useCallback(
     async (file: File) => {
@@ -253,6 +406,8 @@ export function usePresentationSession({
 
   const endSession = useCallback(() => {
     fileLoadSeqRef.current += 1;
+    pendingPasswordDocRef.current = null;
+    setPasswordRequest(null);
     transferAbortRef.current?.abort();
     hostTransportRef.current?.endSession();
     hostTransportRef.current = null;
@@ -304,6 +459,8 @@ export function usePresentationSession({
       engine,
       guestTransportRef,
       assemblerRef,
+      pendingPasswordDocRef,
+      setPasswordRequest,
       setState,
       notify,
     });
@@ -320,7 +477,10 @@ export function usePresentationSession({
   return {
     state,
     engine: engineRef.current,
+    passwordRequest,
     loadHostFile,
+    submitPdfPassword,
+    cancelPdfPassword,
     nextPage,
     prevPage,
     goToPage,
@@ -404,6 +564,8 @@ interface GuestLifecycleDeps {
   engine: PdfEngine;
   guestTransportRef: React.RefObject<GuestTransport | null>;
   assemblerRef: React.RefObject<PdfChunkAssembler | null>;
+  pendingPasswordDocRef: React.RefObject<PendingPasswordDoc | null>;
+  setPasswordRequest: Dispatch<SetStateAction<PasswordRequest | null>>;
   setState: Dispatch<SetStateAction<SessionState>>;
   notify: (msg: string) => void;
 }
@@ -496,6 +658,8 @@ function startGuestLifecycle(deps: GuestLifecycleDeps): () => void {
     deps.guestTransportRef.current?.destroy();
     deps.guestTransportRef.current = null;
     deps.assemblerRef.current = null;
+    deps.pendingPasswordDocRef.current = null;
+    deps.setPasswordRequest(null);
     deps.engine.destroy();
   };
 }
@@ -529,6 +693,8 @@ function handleGuestMessage(
     case 'SESSION_END':
       deps.engine.destroy();
       deps.assemblerRef.current = null;
+      deps.pendingPasswordDocRef.current = null;
+      deps.setPasswordRequest(null);
       deps.setState((prev) => ({ ...prev, status: 'ended', document: null }));
       break;
     default:
@@ -540,6 +706,9 @@ function handleIncomingDocMeta(
   msg: Extract<PeerMessage, { type: 'DOC_META' }>,
   deps: GuestLifecycleDeps
 ): void {
+  deps.pendingPasswordDocRef.current = null;
+  deps.setPasswordRequest(null);
+
   try {
     deps.assemblerRef.current = new PdfChunkAssembler({
       docId: msg.docId,
@@ -606,12 +775,36 @@ function handleIncomingDocEnd(
         }));
         deps.notify(`PDF sincronizado: ${header.fileName}`);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (!isActive()) return;
+        const classified = classifyPdfLoadError(err);
+
+        if (
+          classified.code === 'password_required' ||
+          classified.code === 'password_incorrect'
+        ) {
+          deps.pendingPasswordDocRef.current = {
+            source: 'guest',
+            header: {
+              docId: header.docId,
+              fileName: header.fileName,
+              byteLength: header.byteLength,
+              initialPage: header.initialPage,
+            },
+            bytes,
+          };
+          deps.setPasswordRequest({
+            fileName: header.fileName,
+            errorMessage: null,
+            submitting: false,
+          });
+          return;
+        }
+
         deps.setState((prev) => ({
           ...prev,
           status: 'error',
-          errorMessage: 'Não foi possível renderizar o PDF recebido.',
+          errorMessage: getGuestPdfErrorMessage(classified),
         }));
       });
   } catch {
