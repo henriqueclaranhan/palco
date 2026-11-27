@@ -3,6 +3,7 @@ import {
   AlertCircle,
   Download,
   FileUp,
+  Lock,
   PowerOff,
   Radio,
   RotateCcw,
@@ -78,6 +79,20 @@ export function StageOverlay({
         </div>
       );
 
+    case 'authenticating':
+      return (
+        <div className="stage-state-card" aria-live="polite">
+          <span className="stage-state-icon" aria-hidden="true">
+            <Lock size={22} />
+          </span>
+          <h1 className="stage-state-title">Senha de coapresentador</h1>
+          <p className="stage-state-desc">
+            Informe a senha fornecida pelo anfitrião para entrar como coapresentador na
+            sala <strong translate="no">{roomCode}</strong>.
+          </p>
+        </div>
+      );
+
     case 'connecting':
     case 'reconnecting':
       return (
@@ -141,7 +156,7 @@ export function StageOverlay({
           <h1 className="stage-state-title">Escolha um PDF para apresentar</h1>
           <p className="stage-state-desc">
             Sala <strong translate="no">{roomCode}</strong> pronta. Assim que você
-            escolher o arquivo, qualquer coapresentador conectado o receberá
+            escolher o arquivo, qualquer participante conectado o receberá
             automaticamente.
           </p>
           <input

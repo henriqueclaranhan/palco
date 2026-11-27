@@ -9,6 +9,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/v/:path*",
+      "destination": "/index.html"
+    },
+    {
       "source": "/privacidade",
       "destination": "/index.html"
     }
@@ -23,6 +27,10 @@
     },
     {
       "source": "/s/:path*",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
+    },
+    {
+      "source": "/v/:path*",
       "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
     }
   ]

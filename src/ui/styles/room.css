@@ -534,10 +534,55 @@
   color: var(--accent-ink);
 }
 
+.slide-filmstrip-card[data-host-page='true'] {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border-subtle));
+}
+
+.slide-filmstrip-host-dot {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-start: 4px;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg-stage);
+  pointer-events: none;
+}
+
 .dock-wrap {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
+  gap: 0.5rem;
   inline-size: 100%;
+}
+
+.toolbar-readonly-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding-inline: 0.65rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-primary);
+  white-space: nowrap;
+}
+
+.spectator-return-btn {
+  border-radius: var(--radius-pill);
+}
+
+.spectator-fs-return {
+  position: fixed;
+  inset-block-end: max(1rem, env(safe-area-inset-bottom, 0px));
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
 }
 
 .presenter-toolbar {

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 
 interface UseKeyboardAndSwipeOptions {
   enabled: boolean;
+  canNavigate?: boolean;
   totalPages: number;
   onNext: () => void;
   onPrev: () => void;
@@ -60,6 +61,7 @@ export function resolvePresentationShortcut(
 
 export function useKeyboardAndSwipe({
   enabled,
+  canNavigate = true,
   totalPages,
   onNext,
   onPrev,
@@ -86,6 +88,8 @@ export function useKeyboardAndSwipe({
         totalPages,
       });
       if (!action) return;
+
+      if (action !== 'toggle_fullscreen' && !canNavigate) return;
 
       switch (action) {
         case 'next':
@@ -121,6 +125,7 @@ export function useKeyboardAndSwipe({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     enabled,
+    canNavigate,
     totalPages,
     onNext,
     onPrev,
@@ -132,13 +137,17 @@ export function useKeyboardAndSwipe({
 
   const swipeHandlers = {
     onTouchStart: (e: React.TouchEvent) => {
-      if (e.touches.length !== 1) return;
+      if (!canNavigate || e.touches.length !== 1) return;
       touchStartRef.current = {
         x: e.touches[0].clientX,
         y: e.touches[0].clientY,
       };
     },
     onTouchEnd: (e: React.TouchEvent) => {
+      if (!canNavigate) {
+        touchStartRef.current = null;
+        return;
+      }
       const start = touchStartRef.current;
       touchStartRef.current = null;
       if (!start || e.changedTouches.length !== 1) return;

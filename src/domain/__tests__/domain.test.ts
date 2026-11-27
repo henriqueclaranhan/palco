@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   PROTOCOL_VERSION,
   canPerformAction,
+  generateCoPresenterPassword,
   generateRoomCode,
   isValidRoomCode,
+  normalizeCoPresenterPassword,
   normalizeRoomCode,
   parsePeerMessage,
   roomCodeToPeerId,
@@ -13,18 +15,27 @@ import { clampPage, computeTargetPage, formatBytes } from '../session';
 import { validatePdfFile } from '../pdfValidation';
 
 describe('protocol authority & validation', () => {
-  it('enforces host-only document replacement and session termination', () => {
+  it('enforces host-only document replacement, spectator config, and session termination', () => {
     expect(canPerformAction('host', 'replace_document')).toBe(true);
     expect(canPerformAction('host', 'end_session')).toBe(true);
     expect(canPerformAction('host', 'invite_copresenter')).toBe(true);
+    expect(canPerformAction('host', 'configure_spectators')).toBe(true);
     expect(canPerformAction('host', 'navigate')).toBe(true);
     expect(canPerformAction('host', 'toggle_fullscreen')).toBe(true);
 
     expect(canPerformAction('co-presenter', 'replace_document')).toBe(false);
     expect(canPerformAction('co-presenter', 'end_session')).toBe(false);
     expect(canPerformAction('co-presenter', 'invite_copresenter')).toBe(false);
+    expect(canPerformAction('co-presenter', 'configure_spectators')).toBe(false);
     expect(canPerformAction('co-presenter', 'navigate')).toBe(true);
     expect(canPerformAction('co-presenter', 'toggle_fullscreen')).toBe(true);
+
+    expect(canPerformAction('spectator', 'replace_document')).toBe(false);
+    expect(canPerformAction('spectator', 'end_session')).toBe(false);
+    expect(canPerformAction('spectator', 'invite_copresenter')).toBe(false);
+    expect(canPerformAction('spectator', 'configure_spectators')).toBe(false);
+    expect(canPerformAction('spectator', 'navigate')).toBe(false);
+    expect(canPerformAction('spectator', 'toggle_fullscreen')).toBe(true);
   });
 
   it('generates and normalizes valid room codes', () => {
@@ -57,6 +68,72 @@ describe('protocol authority & validation', () => {
       v: PROTOCOL_VERSION,
       type: 'PEER_LEAVE',
     });
+
+    expect(
+      parsePeerMessage({
+        v: PROTOCOL_VERSION,
+        type: 'ROOM_CONFIG',
+        spectatorMode: 'free',
+      })
+    ).toEqual({
+      v: PROTOCOL_VERSION,
+      type: 'ROOM_CONFIG',
+      spectatorMode: 'free',
+    });
+
+    expect(
+      parsePeerMessage({
+        v: PROTOCOL_VERSION,
+        type: 'ROOM_CONFIG',
+        spectatorMode: 'invalid',
+      })
+    ).toBeNull();
+
+    expect(
+      parsePeerMessage({
+        v: PROTOCOL_VERSION,
+        type: 'AUTH_REQUIRED',
+        reason: 'invalid_password',
+      })
+    ).toEqual({
+      v: PROTOCOL_VERSION,
+      type: 'AUTH_REQUIRED',
+      reason: 'invalid_password',
+    });
+
+    expect(
+      parsePeerMessage({
+        v: PROTOCOL_VERSION,
+        type: 'AUTH_SUBMIT',
+        password: '  ab12cd  ',
+      })
+    ).toEqual({
+      v: PROTOCOL_VERSION,
+      type: 'AUTH_SUBMIT',
+      password: 'ab12cd',
+    });
+
+    expect(
+      parsePeerMessage({
+        v: PROTOCOL_VERSION,
+        type: 'AUTH_SUBMIT',
+        password: '   ',
+      })
+    ).toBeNull();
+
+    expect(
+      parsePeerMessage({
+        v: PROTOCOL_VERSION,
+        type: 'AUTH_OK',
+      })
+    ).toEqual({
+      v: PROTOCOL_VERSION,
+      type: 'AUTH_OK',
+    });
+
+    const pwd = generateCoPresenterPassword();
+    expect(pwd).toMatch(/^[A-Z0-9]{6}$/);
+    expect(normalizeCoPresenterPassword(`  ${pwd.toLowerCase()} `)).toBe(pwd);
 
     expect(parsePeerMessage(null)).toBeNull();
     expect(parsePeerMessage({ v: 999, type: 'NAVIGATE' })).toBeNull();

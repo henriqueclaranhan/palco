@@ -1,6 +1,10 @@
 import { useEffect, useId, useRef } from 'react';
 import { FileUp, LogOut, Moon, MoreVertical, Power, Share2, Sun } from 'lucide-react';
-import { canPerformAction, type ParticipantRole } from '@/domain/protocol';
+import {
+  canPerformAction,
+  type ParticipantRole,
+  type SpectatorMode,
+} from '@/domain/protocol';
 import type { SessionStatus } from '@/domain/session';
 import { useColorScheme } from '@/application/useColorScheme';
 import { BrandMark } from './BrandMark';
@@ -11,9 +15,32 @@ interface TopBarProps {
   status: SessionStatus;
   fileName: string | null;
   connectedPeers: number;
+  connectedCoPresenters: number;
+  connectedSpectators: number;
+  spectatorMode: SpectatorMode;
+  isFollowingHost: boolean;
   onReplaceFile: (file: File) => void;
   onOpenInvite: () => void;
   onRequestExit: () => void;
+}
+
+function formatHostConnectionLabel(
+  connectedPeers: number,
+  coPresenters: number,
+  spectators: number
+): string {
+  if (connectedPeers === 0) return 'Aguardando participantes';
+  const parts: string[] = [];
+  if (coPresenters > 0) {
+    parts.push(
+      coPresenters === 1 ? '1 coapresentador' : `${coPresenters} coapresentadores`
+    );
+  }
+  if (spectators > 0) {
+    parts.push(spectators === 1 ? '1 espectador' : `${spectators} espectadores`);
+  }
+  if (parts.length > 0) return parts.join(' · ');
+  return connectedPeers === 1 ? '1 conectado' : `${connectedPeers} conectados`;
 }
 
 export function TopBar({
@@ -21,6 +48,10 @@ export function TopBar({
   status,
   fileName,
   connectedPeers,
+  connectedCoPresenters,
+  connectedSpectators,
+  spectatorMode,
+  isFollowingHost,
   onReplaceFile,
   onOpenInvite,
   onRequestExit,
@@ -34,21 +65,30 @@ export function TopBar({
   const canReplaceDoc = canPerformAction(role, 'replace_document');
   const canInvite = canPerformAction(role, 'invite_copresenter');
   const isHost = role === 'host';
+  const isSpectator = role === 'spectator';
   const isDark = resolvedScheme === 'dark';
 
   const connectionLabel = isHost
-    ? connectedPeers === 0
-      ? 'Aguardando coapresentador'
-      : connectedPeers === 1
-        ? '1 coapresentador'
-        : `${connectedPeers} coapresentadores`
+    ? formatHostConnectionLabel(
+        connectedPeers,
+        connectedCoPresenters,
+        connectedSpectators
+      )
     : status === 'synced'
-      ? 'Sincronizado'
-      : status === 'transferring'
-        ? 'Recebendo PDF…'
-        : status === 'reconnecting'
-          ? 'Reconectando…'
-          : 'Conectando…';
+      ? isSpectator
+        ? spectatorMode === 'follow'
+          ? 'Acompanhando anfitrião'
+          : isFollowingHost
+            ? 'Espectador · Ao vivo'
+            : 'Espectador · Navegação livre'
+        : 'Sincronizado'
+      : status === 'authenticating'
+        ? 'Aguardando senha…'
+        : status === 'transferring'
+          ? 'Recebendo PDF…'
+          : status === 'reconnecting'
+            ? 'Reconectando…'
+            : 'Conectando…';
 
   const shortStatusLabel = isHost
     ? connectedPeers === 0
@@ -56,9 +96,15 @@ export function TopBar({
       : connectedPeers === 1
         ? '1 conectado'
         : `${connectedPeers} conectados`
-    : connectionLabel;
+    : status === 'synced' && isSpectator
+      ? spectatorMode === 'follow' || isFollowingHost
+        ? 'Ao vivo'
+        : 'Livre'
+      : connectionLabel;
 
-  const isLive = isHost ? connectedPeers > 0 : status === 'synced';
+  const isLive = isHost
+    ? connectedPeers > 0
+    : status === 'synced' && (!isSpectator || isFollowingHost);
 
   // position overflow menu below its trigger when CSS anchor positioning isn't available
   useEffect(() => {
@@ -166,10 +212,10 @@ export function TopBar({
             type="button"
             className="btn btn-primary topbar-invite-btn"
             onClick={onOpenInvite}
-            aria-label="Convidar coapresentador"
+            aria-label="Compartilhar sala"
           >
             <Share2 size={16} aria-hidden="true" />
-            <span>Convidar</span>
+            <span>Compartilhar</span>
           </button>
         )}
 

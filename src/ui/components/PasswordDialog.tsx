@@ -8,6 +8,14 @@ interface PasswordDialogProps {
   submitting: boolean;
   onSubmit: (password: string) => void;
   onCancel: () => void;
+  title?: string;
+  description?: React.ReactNode;
+  label?: string;
+  hint?: string;
+  submitLabel?: string;
+  submittingLabel?: string;
+  emptyErrorMessage?: string;
+  cancelAriaLabel?: string;
 }
 
 export function PasswordDialog({
@@ -17,6 +25,14 @@ export function PasswordDialog({
   submitting,
   onSubmit,
   onCancel,
+  title = 'PDF protegido por senha',
+  description,
+  label = 'Senha do arquivo',
+  hint = 'A senha é usada apenas localmente no seu navegador para descriptografar o PDF e nunca é enviada ou salva.',
+  submitLabel = 'Abrir PDF',
+  submittingLabel = 'Desbloqueando…',
+  emptyErrorMessage = 'Digite a senha do PDF.',
+  cancelAriaLabel = 'Cancelar abertura do PDF',
 }: PasswordDialogProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -66,7 +82,7 @@ export function PasswordDialog({
     if (submitting) return;
 
     if (password.length === 0) {
-      setLocalError('Digite a senha do PDF.');
+      setLocalError(emptyErrorMessage);
       inputRef.current?.focus();
       return;
     }
@@ -91,12 +107,12 @@ export function PasswordDialog({
       <div className="modal-header">
         <h1 id={titleId} className="modal-title modal-title-with-icon">
           <Lock size={18} aria-hidden="true" />
-          <span>PDF protegido por senha</span>
+          <span>{title}</span>
         </h1>
         <button
           type="button"
           className="btn btn-ghost btn-icon"
-          aria-label="Cancelar abertura do PDF"
+          aria-label={cancelAriaLabel}
           onClick={onCancel}
           disabled={submitting}
         >
@@ -107,12 +123,16 @@ export function PasswordDialog({
       <form onSubmit={handleSubmit} noValidate>
         <div className="modal-body">
           <p className="stage-state-desc">
-            O arquivo <strong>{fileName}</strong> exige senha para ser aberto.
+            {description ?? (
+              <>
+                O arquivo <strong>{fileName}</strong> exige senha para ser aberto.
+              </>
+            )}
           </p>
 
           <div className="password-field">
             <label htmlFor={inputId} className="join-label">
-              Senha do arquivo
+              {label}
             </label>
             <div className="password-input-row">
               <input
@@ -161,8 +181,7 @@ export function PasswordDialog({
             )}
 
             <p id={hintId} className="ephemeral-note">
-              A senha é usada apenas localmente no seu navegador para descriptografar o
-              PDF e nunca é enviada ou salva.
+              {hint}
             </p>
           </div>
         </div>
@@ -177,7 +196,7 @@ export function PasswordDialog({
             Cancelar
           </button>
           <button type="submit" className="btn btn-primary" disabled={submitting}>
-            {submitting ? 'Desbloqueando…' : 'Abrir PDF'}
+            {submitting ? submittingLabel : submitLabel}
           </button>
         </div>
       </form>

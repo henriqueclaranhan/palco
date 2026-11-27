@@ -1,8 +1,10 @@
 import { env } from '@/config/env';
 import {
   PROTOCOL_VERSION,
+  type GuestRole,
   type NavigationAction,
   type PeerMessage,
+  type SpectatorMode,
 } from '@/domain/protocol';
 import { PdfLoadError, getGuestPdfErrorMessage } from '@/domain/pdfErrors';
 import { PdfChunkAssembler } from '@/domain/chunker';
@@ -30,11 +32,13 @@ interface GuestDocumentMeta {
 
 export interface GuestSessionControllerOptions {
   roomCode: string;
+  role?: GuestRole;
   engine: SessionEngine;
   store: SessionStore;
   createTransport?: (
     roomCode: string,
-    callbacks: GuestTransportCallbacks
+    callbacks: GuestTransportCallbacks,
+    role: GuestRole
   ) => GuestTransportPort;
   maxReconnectAttempts?: number;
   reconnectDelayMs?: number;
@@ -48,11 +52,13 @@ export interface GuestSessionControllerOptions {
 
 export class GuestSessionController implements SessionController {
   private readonly roomCode: string;
+  private readonly role: GuestRole;
   private readonly engine: SessionEngine;
   private readonly store: SessionStore;
   private readonly createTransport: (
     roomCode: string,
-    callbacks: GuestTransportCallbacks
+    callbacks: GuestTransportCallbacks,
+    role: GuestRole
   ) => GuestTransportPort;
   private readonly maxReconnectAttempts: number;
   private readonly reconnectDelayMs: number;
@@ -72,14 +78,17 @@ export class GuestSessionController implements SessionController {
   private hadConnectedOnce = false;
   private endedExplicitly = false;
   private active = false;
+  private pendingPassword: string | null = null;
+  private verifiedPassword: string | null = null;
 
   constructor(options: GuestSessionControllerOptions) {
     this.roomCode = options.roomCode;
+    this.role = options.role ?? 'co-presenter';
     this.engine = options.engine;
     this.store = options.store;
     this.createTransport =
       options.createTransport ??
-      ((roomCode, callbacks) => new GuestTransport(roomCode, callbacks));
+      ((roomCode, callbacks, role) => new GuestTransport(roomCode, callbacks, role));
     this.maxReconnectAttempts =
       options.maxReconnectAttempts ?? env.maxReconnectAttempts;
     this.reconnectDelayMs = options.reconnectDelayMs ?? env.reconnectDelayMs;
@@ -110,6 +119,7 @@ export class GuestSessionController implements SessionController {
     this.transport = null;
     this.assembler = null;
     this.loader.invalidate();
+    this.store.setRoomAuthRequest?.(null);
     this.engine.destroy();
   }
 
@@ -145,6 +155,41 @@ export class GuestSessionController implements SessionController {
     }));
   }
 
+  submitCoPresenterPassword(password: string): void {
+    if (this.role !== 'co-presenter') return;
+    const trimmed = password.trim();
+    if (!trimmed) return;
+
+    this.pendingPassword = trimmed;
+    this.store.setRoomAuthRequest?.((prev) =>
+      prev
+        ? { ...prev, errorMessage: null, submitting: true }
+        : { roomCode: this.roomCode, errorMessage: null, submitting: true }
+    );
+
+    const sent = this.transport?.send({
+      v: PROTOCOL_VERSION,
+      type: 'AUTH_SUBMIT',
+      password: trimmed,
+    });
+    if (!sent) {
+      this.store.setRoomAuthRequest?.({
+        roomCode: this.roomCode,
+        errorMessage: 'Conexão com o anfitrião indisponível. Tente novamente.',
+        submitting: false,
+      });
+    }
+  }
+
+  cancelCoPresenterAuth(): void {
+    this.store.setRoomAuthRequest?.(null);
+    this.endSession();
+  }
+
+  regenerateCoPresenterPassword(): void {
+    // Only the host can regenerate the co-presenter password.
+  }
+
   navigate(action: 'next' | 'prev' | 'goto', page?: number): void {
     const current = this.store.getState();
     const doc = current.document;
@@ -155,12 +200,26 @@ export class GuestSessionController implements SessionController {
         ? { action: 'goto', page: page ?? 1, docId: doc.docId }
         : { action, docId: doc.docId };
 
+    if (this.role === 'spectator') {
+      if (current.spectatorMode !== 'free') return;
+      const targetPage = computeTargetPage(current.currentPage, doc.totalPages, nav);
+      if (targetPage === current.currentPage) return;
+
+      this.store.updateState((prev) => ({
+        ...prev,
+        currentPage: targetPage,
+        isFollowingHost: targetPage === prev.hostPage,
+      }));
+      return;
+    }
+
     const targetPage = computeTargetPage(current.currentPage, doc.totalPages, nav);
     if (targetPage === current.currentPage) return;
 
     this.store.updateState((prev) => ({
       ...prev,
       currentPage: targetPage,
+      hostPage: targetPage,
       lastUpdatedBy: 'co-presenter',
     }));
 
@@ -173,42 +232,64 @@ export class GuestSessionController implements SessionController {
     });
   }
 
+  setSpectatorMode(_mode: SpectatorMode): void {
+    // Only the host can configure spectator mode.
+  }
+
+  followHost(): void {
+    if (this.role !== 'spectator') return;
+    this.store.updateState((prev) => {
+      if (!prev.document) return prev;
+      const targetPage = clampPage(prev.hostPage, prev.document.totalPages);
+      if (prev.isFollowingHost && prev.currentPage === targetPage) return prev;
+      return {
+        ...prev,
+        currentPage: targetPage,
+        isFollowingHost: true,
+      };
+    });
+  }
+
   private connect(): void {
     this.transport?.destroy();
 
-    this.transport = this.createTransport(this.roomCode, {
-      onConnected: () => {
-        if (!this.active) return;
-        this.hadConnectedOnce = true;
-        this.reconnectAttempts = 0;
-        this.store.updateState((prev) => ({
-          ...prev,
-          status: 'transferring',
-          transferProgress: 0,
-          errorMessage: null,
-        }));
-      },
-      onMessage: (msg) => {
-        if (!this.active) return;
-        this.handleMessage(msg);
-      },
-      onDisconnected: () => {
-        if (!this.active || this.endedExplicitly) return;
-        this.scheduleReconnect();
-      },
-      onError: (message) => {
-        if (!this.active || this.endedExplicitly) return;
-        if (this.hadConnectedOnce) {
+    this.transport = this.createTransport(
+      this.roomCode,
+      {
+        onConnected: () => {
+          if (!this.active) return;
+          this.hadConnectedOnce = true;
+          this.reconnectAttempts = 0;
+          this.store.updateState((prev) => ({
+            ...prev,
+            status: 'transferring',
+            transferProgress: 0,
+            errorMessage: null,
+          }));
+        },
+        onMessage: (msg) => {
+          if (!this.active) return;
+          this.handleMessage(msg);
+        },
+        onDisconnected: () => {
+          if (!this.active || this.endedExplicitly) return;
           this.scheduleReconnect();
-          return;
-        }
-        this.store.updateState((prev) => ({
-          ...prev,
-          status: 'error',
-          errorMessage: message,
-        }));
+        },
+        onError: (message) => {
+          if (!this.active || this.endedExplicitly) return;
+          if (this.hadConnectedOnce) {
+            this.scheduleReconnect();
+            return;
+          }
+          this.store.updateState((prev) => ({
+            ...prev,
+            status: 'error',
+            errorMessage: message,
+          }));
+        },
       },
-    });
+      this.role
+    );
   }
 
   private scheduleReconnect(): void {
@@ -260,6 +341,15 @@ export class GuestSessionController implements SessionController {
         break;
       case 'SYNC_PAGE':
         this.handleSyncPage(msg);
+        break;
+      case 'ROOM_CONFIG':
+        this.handleRoomConfig(msg);
+        break;
+      case 'AUTH_REQUIRED':
+        this.handleAuthRequired(msg);
+        break;
+      case 'AUTH_OK':
+        this.handleAuthOk();
         break;
       case 'SESSION_END':
         this.handleSessionEnd();
@@ -345,6 +435,7 @@ export class GuestSessionController implements SessionController {
     if (outcome.status !== 'loaded') return;
 
     const { meta, totalPages } = outcome;
+    const initialPage = clampPage(meta.initialPage, totalPages);
     this.store.updateState((prev) => ({
       ...prev,
       status: 'synced',
@@ -355,7 +446,9 @@ export class GuestSessionController implements SessionController {
         byteLength: meta.byteLength,
         totalPages,
       },
-      currentPage: clampPage(meta.initialPage, totalPages),
+      currentPage: initialPage,
+      hostPage: initialPage,
+      isFollowingHost: true,
       revision: prev.revision + 1,
       lastUpdatedBy: 'host',
       errorMessage: null,
@@ -366,13 +459,106 @@ export class GuestSessionController implements SessionController {
   private handleSyncPage(msg: Extract<PeerMessage, { type: 'SYNC_PAGE' }>): void {
     this.store.updateState((prev) => {
       if (!prev.document || prev.document.docId !== msg.docId) return prev;
+      const nextHostPage = clampPage(msg.page, prev.document.totalPages);
+      const shouldUpdateCurrent =
+        this.role !== 'spectator' ||
+        prev.spectatorMode === 'follow' ||
+        prev.isFollowingHost;
+
       return {
         ...prev,
-        currentPage: clampPage(msg.page, prev.document.totalPages),
+        hostPage: nextHostPage,
+        currentPage: shouldUpdateCurrent ? nextHostPage : prev.currentPage,
+        isFollowingHost:
+          this.role === 'spectator'
+            ? shouldUpdateCurrent
+              ? true
+              : prev.isFollowingHost
+            : true,
         revision: Math.max(prev.revision, msg.revision),
         lastUpdatedBy: msg.by,
       };
     });
+  }
+
+  private handleRoomConfig(msg: Extract<PeerMessage, { type: 'ROOM_CONFIG' }>): void {
+    const previous = this.store.getState();
+    const changed = previous.spectatorMode !== msg.spectatorMode;
+
+    this.store.updateState((prev) => {
+      if (this.role === 'spectator' && msg.spectatorMode === 'follow') {
+        const syncedPage = prev.document
+          ? clampPage(prev.hostPage, prev.document.totalPages)
+          : prev.hostPage;
+        return {
+          ...prev,
+          spectatorMode: msg.spectatorMode,
+          currentPage: syncedPage,
+          isFollowingHost: true,
+        };
+      }
+      return {
+        ...prev,
+        spectatorMode: msg.spectatorMode,
+      };
+    });
+
+    if (this.role === 'spectator' && changed && previous.document) {
+      this.store.notify(
+        msg.spectatorMode === 'follow'
+          ? 'O anfitrião ativou o acompanhamento obrigatório.'
+          : 'Navegação livre liberada pelo anfitrião.'
+      );
+    }
+  }
+
+  private handleAuthRequired(
+    msg: Extract<PeerMessage, { type: 'AUTH_REQUIRED' }>
+  ): void {
+    if (this.role !== 'co-presenter') return;
+
+    if (msg.reason === 'required' && this.verifiedPassword) {
+      this.pendingPassword = this.verifiedPassword;
+      this.transport?.send({
+        v: PROTOCOL_VERSION,
+        type: 'AUTH_SUBMIT',
+        password: this.verifiedPassword,
+      });
+      return;
+    }
+
+    if (msg.reason === 'invalid_password') {
+      this.verifiedPassword = null;
+      this.pendingPassword = null;
+    }
+
+    this.store.updateState((prev) => ({
+      ...prev,
+      status: 'authenticating',
+      errorMessage: null,
+    }));
+    this.store.setRoomAuthRequest?.({
+      roomCode: this.roomCode,
+      errorMessage:
+        msg.reason === 'invalid_password'
+          ? 'Senha incorreta. Peça a senha ao anfitrião e tente novamente.'
+          : null,
+      submitting: false,
+    });
+  }
+
+  private handleAuthOk(): void {
+    if (this.pendingPassword) {
+      this.verifiedPassword = this.pendingPassword;
+      this.pendingPassword = null;
+    }
+    this.store.setRoomAuthRequest?.(null);
+    this.store.updateState((prev) => ({
+      ...prev,
+      status: prev.document ? 'synced' : 'transferring',
+      transferProgress: prev.document ? 1 : 0,
+      errorMessage: null,
+    }));
   }
 
   private handleSessionEnd(): void {
@@ -381,6 +567,7 @@ export class GuestSessionController implements SessionController {
     this.engine.destroy();
     this.assembler = null;
     this.loader.invalidate();
+    this.store.setRoomAuthRequest?.(null);
     this.store.updateState((prev) => ({
       ...prev,
       status: 'ended',

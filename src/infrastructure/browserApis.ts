@@ -60,12 +60,22 @@ export function canNativeShare(): boolean {
   return typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 }
 
-export async function shareInviteLink(url: string, roomCode: string): Promise<boolean> {
+export async function shareInviteLink(
+  url: string,
+  roomCode: string,
+  role: 'co-presenter' | 'spectator' = 'co-presenter'
+): Promise<boolean> {
   if (!canNativeShare()) return false;
   try {
     await navigator.share({
-      title: 'Coapresentar no Palco',
-      text: `Entre como coapresentador na sala ${roomCode}`,
+      title:
+        role === 'spectator'
+          ? 'Acompanhar apresentação no Palco'
+          : 'Coapresentar no Palco',
+      text:
+        role === 'spectator'
+          ? `Acompanhe a apresentação na sala ${roomCode}`
+          : `Entre como coapresentador na sala ${roomCode}`,
       url,
     });
     return true;

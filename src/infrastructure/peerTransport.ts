@@ -3,8 +3,10 @@ import { env } from '@/config/env';
 import { resolveIceServers } from '@/infrastructure/iceServers';
 import {
   PROTOCOL_VERSION,
+  isGuestRole,
   parsePeerMessage,
   roomCodeToPeerId,
+  type GuestRole,
   type PeerMessage,
 } from '@/domain/protocol';
 import { CHUNK_SIZE_BYTES, slicePdfIntoChunks } from '@/domain/chunker';
@@ -106,16 +108,28 @@ export async function streamDocumentToConnection(
   } satisfies PeerMessage);
 }
 
+function resolvePeerRole(metadata: unknown): GuestRole {
+  if (
+    typeof metadata === 'object' &&
+    metadata !== null &&
+    isGuestRole((metadata as Record<string, unknown>).role)
+  ) {
+    return (metadata as { role: GuestRole }).role;
+  }
+  return 'co-presenter';
+}
+
 export interface HostTransportCallbacks {
   onReady: (peerId: string) => void;
-  onPeerConnected: (conn: DataConnection) => void;
-  onPeerDisconnected: (peerId: string) => void;
+  onPeerConnected: (conn: DataConnection, role: GuestRole) => void;
+  onPeerDisconnected: (peerId: string, role: GuestRole) => void;
   onMessage: (peerId: string, msg: PeerMessage) => void;
   onError: (message: string) => void;
 }
 
 interface TrackedConnection {
   conn: DataConnection;
+  role: GuestRole;
   lastSeenAt: number;
   detach: () => void;
 }
@@ -165,6 +179,13 @@ export class HostTransport {
     for (const { conn } of this.connections.values()) {
       if (conn.open) conn.send(message);
     }
+  }
+
+  sendTo(peerId: string, message: PeerMessage): boolean {
+    const entry = this.connections.get(peerId);
+    if (!entry || !entry.conn.open) return false;
+    entry.conn.send(message);
+    return true;
   }
 
   endSession(): void {
@@ -228,6 +249,7 @@ export class HostTransport {
     }
 
     const peerId = conn.peer;
+    const role = resolvePeerRole(conn.metadata);
     let detached = false;
 
     const detach = () => {
@@ -235,7 +257,7 @@ export class HostTransport {
       detached = true;
       safeInvoke(() => conn.close());
       if (this.connections.delete(peerId) && !this.destroyed) {
-        this.callbacks.onPeerDisconnected(peerId);
+        this.callbacks.onPeerDisconnected(peerId, role);
       }
     };
 
@@ -251,13 +273,13 @@ export class HostTransport {
         conn.close();
         return;
       }
-      this.connections.set(peerId, { conn, lastSeenAt: Date.now(), detach });
+      this.connections.set(peerId, { conn, role, lastSeenAt: Date.now(), detach });
       conn.dataChannel?.addEventListener('close', detach, { once: true });
       conn.peerConnection?.addEventListener(
         'iceconnectionstatechange',
         onIceStateChange
       );
-      this.callbacks.onPeerConnected(conn);
+      this.callbacks.onPeerConnected(conn, role);
     });
 
     conn.on('data', (raw) => {
@@ -320,12 +342,18 @@ export class GuestTransport {
   private peer: Peer | null = null;
   private conn: DataConnection | null = null;
   private readonly callbacks: GuestTransportCallbacks;
+  private readonly role: GuestRole;
   private readonly initAbort = new AbortController();
   private destroyed = false;
   private connectTimeoutId: number | null = null;
 
-  constructor(roomCode: string, callbacks: GuestTransportCallbacks) {
+  constructor(
+    roomCode: string,
+    callbacks: GuestTransportCallbacks,
+    role: GuestRole = 'co-presenter'
+  ) {
     this.callbacks = callbacks;
+    this.role = role;
 
     this.connectTimeoutId = window.setTimeout(() => {
       if (!this.destroyed && (!this.conn || !this.conn.open)) {
@@ -387,6 +415,7 @@ export class GuestTransport {
     const conn = peer.connect(hostPeerId, {
       reliable: true,
       serialization: 'binary',
+      metadata: { role: this.role },
     });
     this.conn = conn;
 

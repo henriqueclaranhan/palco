@@ -5,6 +5,7 @@ import {
   LayoutGrid,
   Maximize2,
   Minimize2,
+  Radio,
 } from 'lucide-react';
 
 interface PresenterToolbarProps {
@@ -12,9 +13,14 @@ interface PresenterToolbarProps {
   totalPages: number;
   isFullscreen: boolean;
   isSlideGridOpen: boolean;
+  canNavigate?: boolean;
+  isSpectator?: boolean;
+  isFollowingHost?: boolean;
+  hostPage?: number;
   onPrev: () => void;
   onNext: () => void;
   onGoToPage: (page: number) => void;
+  onFollowHost?: () => void;
   onToggleSlideGrid: () => void;
   onToggleFullscreen: () => void;
 }
@@ -24,9 +30,14 @@ export function PresenterToolbar({
   totalPages,
   isFullscreen,
   isSlideGridOpen,
+  canNavigate = true,
+  isSpectator = false,
+  isFollowingHost = true,
+  hostPage,
   onPrev,
   onNext,
   onGoToPage,
+  onFollowHost,
   onToggleSlideGrid,
   onToggleFullscreen,
 }: PresenterToolbarProps) {
@@ -102,8 +113,26 @@ export function PresenterToolbar({
     }
   };
 
+  const showReturnToHost =
+    isSpectator && canNavigate && !isFollowingHost && Boolean(onFollowHost);
+
   return (
     <div className="dock-wrap">
+      {showReturnToHost && (
+        <button
+          type="button"
+          className="btn btn-primary btn-compact spectator-return-btn"
+          onClick={onFollowHost}
+        >
+          <Radio size={15} aria-hidden="true" />
+          <span>
+            {hostPage && hostPage !== currentPage
+              ? `Voltar ao anfitrião (slide ${hostPage})`
+              : 'Acompanhar anfitrião'}
+          </span>
+        </button>
+      )}
+
       <div
         ref={toolbarRef}
         role="toolbar"
@@ -111,60 +140,69 @@ export function PresenterToolbar({
         className="presenter-toolbar"
         {...({ focusgroup: 'toolbar wrap' } as Record<string, string>)}
       >
-        <div role="group" aria-label="Navegação de páginas" className="toolbar-group">
-          <button
-            type="button"
-            className="btn btn-ghost btn-icon"
-            aria-label="Página anterior"
-            aria-disabled={!canPrev}
-            title="Página anterior (Seta esquerda)"
-            onClick={() => {
-              if (canPrev) onPrev();
-            }}
-          >
-            <ChevronLeft size={20} aria-hidden="true" />
-          </button>
+        {canNavigate ? (
+          <div role="group" aria-label="Navegação de páginas" className="toolbar-group">
+            <button
+              type="button"
+              className="btn btn-ghost btn-icon"
+              aria-label="Página anterior"
+              aria-disabled={!canPrev}
+              title="Página anterior (Seta esquerda)"
+              onClick={() => {
+                if (canPrev) onPrev();
+              }}
+            >
+              <ChevronLeft size={20} aria-hidden="true" />
+            </button>
 
-          <form
-            className="page-jump-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              commitPage();
-            }}
-          >
-            <label htmlFor="slide-page-input" className="sr-only">
-              Ir para a página
-            </label>
-            <input
-              id="slide-page-input"
-              name="page"
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              autoComplete="off"
-              spellCheck={false}
-              className="page-jump-input"
-              value={draftPage}
-              onChange={(e) => setDraftPage(e.target.value.replace(/\D/g, ''))}
-              onBlur={commitPage}
-              aria-label={`Página atual ${currentPage} de ${totalPages}`}
-            />
-            <span aria-hidden="true">/ {totalPages}</span>
-          </form>
+            <form
+              className="page-jump-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                commitPage();
+              }}
+            >
+              <label htmlFor="slide-page-input" className="sr-only">
+                Ir para a página
+              </label>
+              <input
+                id="slide-page-input"
+                name="page"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="off"
+                spellCheck={false}
+                className="page-jump-input"
+                value={draftPage}
+                onChange={(e) => setDraftPage(e.target.value.replace(/\D/g, ''))}
+                onBlur={commitPage}
+                aria-label={`Página atual ${currentPage} de ${totalPages}`}
+              />
+              <span aria-hidden="true">/ {totalPages}</span>
+            </form>
 
-          <button
-            type="button"
-            className="btn btn-ghost btn-icon"
-            aria-label="Próxima página"
-            aria-disabled={!canNext}
-            title="Próxima página (Seta direita)"
-            onClick={() => {
-              if (canNext) onNext();
-            }}
-          >
-            <ChevronRight size={20} aria-hidden="true" />
-          </button>
-        </div>
+            <button
+              type="button"
+              className="btn btn-ghost btn-icon"
+              aria-label="Próxima página"
+              aria-disabled={!canNext}
+              title="Próxima página (Seta direita)"
+              onClick={() => {
+                if (canNext) onNext();
+              }}
+            >
+              <ChevronRight size={20} aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          <div className="toolbar-readonly-status" aria-live="polite">
+            <span className="status-dot" data-live="true" aria-hidden="true" />
+            <span>
+              Slide {currentPage} / {totalPages}
+            </span>
+          </div>
+        )}
 
         <span
           role="separator"
@@ -173,18 +211,20 @@ export function PresenterToolbar({
         />
 
         <div role="group" aria-label="Exibição" className="toolbar-group">
-          <button
-            type="button"
-            className="btn btn-surface toolbar-fs-btn"
-            aria-label="Grade de slides"
-            aria-haspopup="dialog"
-            aria-expanded={isSlideGridOpen}
-            title="Grade de slides (G)"
-            onClick={onToggleSlideGrid}
-          >
-            <LayoutGrid size={17} aria-hidden="true" />
-            <span className="topbar-label-desktop">Slides</span>
-          </button>
+          {canNavigate && (
+            <button
+              type="button"
+              className="btn btn-surface toolbar-fs-btn"
+              aria-label="Grade de slides"
+              aria-haspopup="dialog"
+              aria-expanded={isSlideGridOpen}
+              title="Grade de slides (G)"
+              onClick={onToggleSlideGrid}
+            >
+              <LayoutGrid size={17} aria-hidden="true" />
+              <span className="topbar-label-desktop">Slides</span>
+            </button>
+          )}
 
           <button
             type="button"

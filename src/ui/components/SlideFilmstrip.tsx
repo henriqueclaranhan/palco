@@ -6,6 +6,7 @@ interface SlideFilmstripProps {
   engine: PdfEngine;
   docId: string;
   currentPage: number;
+  hostPage?: number;
   totalPages: number;
   onSelectPage: (page: number) => void;
 }
@@ -17,6 +18,7 @@ export function SlideFilmstrip({
   engine,
   docId,
   currentPage,
+  hostPage,
   totalPages,
   onSelectPage,
 }: SlideFilmstripProps) {
@@ -83,6 +85,7 @@ export function SlideFilmstrip({
         <div className="slide-filmstrip-track" role="list">
           {pages.map((page) => {
             const isCurrent = page === currentPage;
+            const isHostPage = hostPage !== undefined && page === hostPage && !isCurrent;
             const shouldDefer =
               totalPages > DEFERRED_THRESHOLD_PAGES &&
               Math.abs(page - anchorPage) > IMMEDIATE_WINDOW_RADIUS;
@@ -104,15 +107,25 @@ export function SlideFilmstrip({
                   className="slide-filmstrip-card"
                   style={{ aspectRatio: String(aspectRatio) }}
                   data-current={isCurrent}
+                  data-host-page={isHostPage || undefined}
                   aria-current={isCurrent ? 'page' : undefined}
                   aria-label={
                     isCurrent
                       ? `Slide ${page} de ${totalPages} (atual)`
-                      : `Ir para slide ${page} de ${totalPages}`
+                      : isHostPage
+                        ? `Ir para slide ${page} de ${totalPages} (slide do anfitrião)`
+                        : `Ir para slide ${page} de ${totalPages}`
                   }
                   onClick={() => onSelectPage(page)}
                 >
                   <canvas className="slide-filmstrip-canvas" aria-hidden="true" />
+                  {isHostPage && (
+                    <span
+                      className="slide-filmstrip-host-dot"
+                      aria-hidden="true"
+                      title="Slide atual do anfitrião"
+                    />
+                  )}
                   <span className="slide-filmstrip-badge" aria-hidden="true">
                     {page}
                   </span>

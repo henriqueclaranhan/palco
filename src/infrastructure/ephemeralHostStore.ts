@@ -1,7 +1,11 @@
+import { isSpectatorMode, type SpectatorMode } from '@/domain/protocol';
+
 export interface SavedHostSession {
   roomCode: string;
   fileName: string;
   currentPage: number;
+  spectatorMode?: SpectatorMode;
+  coPresenterPassword?: string;
   bytes: Uint8Array;
 }
 
@@ -9,6 +13,8 @@ interface StoredHostMeta {
   roomCode: string;
   fileName: string;
   currentPage: number;
+  spectatorMode?: SpectatorMode;
+  coPresenterPassword?: string;
   token: string;
 }
 
@@ -113,7 +119,8 @@ export async function saveHostReloadState(
   roomCode: string,
   fileName: string,
   currentPage: number,
-  bytes: Uint8Array
+  bytes: Uint8Array,
+  coPresenterPassword?: string
 ): Promise<void> {
   const existing = readMeta();
   const token =
@@ -121,7 +128,23 @@ export async function saveHostReloadState(
       ? existing.token
       : `${roomCode}-${Date.now().toString(36)}`;
 
-  writeMeta({ roomCode, fileName, currentPage, token });
+  const spectatorMode =
+    existing?.roomCode === roomCode && isSpectatorMode(existing.spectatorMode)
+      ? existing.spectatorMode
+      : 'follow';
+
+  const resolvedPassword =
+    coPresenterPassword ??
+    (existing?.roomCode === roomCode ? existing.coPresenterPassword : undefined);
+
+  writeMeta({
+    roomCode,
+    fileName,
+    currentPage,
+    spectatorMode,
+    coPresenterPassword: resolvedPassword,
+    token,
+  });
 
   try {
     await putBytes(token, bytes);
@@ -134,6 +157,24 @@ export function updateHostReloadPage(roomCode: string, currentPage: number): voi
   const existing = readMeta();
   if (!existing || existing.roomCode !== roomCode) return;
   writeMeta({ ...existing, currentPage });
+}
+
+export function updateHostReloadSpectatorMode(
+  roomCode: string,
+  spectatorMode: SpectatorMode
+): void {
+  const existing = readMeta();
+  if (!existing || existing.roomCode !== roomCode) return;
+  writeMeta({ ...existing, spectatorMode });
+}
+
+export function updateHostReloadPassword(
+  roomCode: string,
+  coPresenterPassword: string
+): void {
+  const existing = readMeta();
+  if (!existing || existing.roomCode !== roomCode) return;
+  writeMeta({ ...existing, coPresenterPassword });
 }
 
 export async function loadHostReloadState(
@@ -149,6 +190,14 @@ export async function loadHostReloadState(
       roomCode: meta.roomCode,
       fileName: meta.fileName,
       currentPage: meta.currentPage,
+      spectatorMode: isSpectatorMode(meta.spectatorMode)
+        ? meta.spectatorMode
+        : 'follow',
+      coPresenterPassword:
+        typeof meta.coPresenterPassword === 'string' &&
+        meta.coPresenterPassword.length > 0
+          ? meta.coPresenterPassword
+          : undefined,
       bytes,
     };
   } catch {

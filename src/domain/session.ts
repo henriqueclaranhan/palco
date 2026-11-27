@@ -1,9 +1,15 @@
-import type { NavigationAction, ParticipantRole } from './protocol';
+import {
+  generateCoPresenterPassword,
+  type NavigationAction,
+  type ParticipantRole,
+  type SpectatorMode,
+} from './protocol';
 
 export type SessionStatus =
   | 'initializing'
   | 'ready'
   | 'connecting'
+  | 'authenticating'
   | 'reconnecting'
   | 'transferring'
   | 'synced'
@@ -23,8 +29,14 @@ export interface SessionState {
   status: SessionStatus;
   document: DocumentDescriptor | null;
   currentPage: number;
+  hostPage: number;
   revision: number;
   connectedPeers: number;
+  connectedCoPresenters: number;
+  connectedSpectators: number;
+  spectatorMode: SpectatorMode;
+  isFollowingHost: boolean;
+  coPresenterPassword: string | null;
   transferProgress: number;
   lastUpdatedBy: ParticipantRole | null;
   errorMessage: string | null;
@@ -40,8 +52,14 @@ export function createInitialSessionState(
     status: role === 'host' ? 'initializing' : 'connecting',
     document: null,
     currentPage: 1,
+    hostPage: 1,
     revision: 0,
     connectedPeers: 0,
+    connectedCoPresenters: 0,
+    connectedSpectators: 0,
+    spectatorMode: 'follow',
+    isFollowingHost: true,
+    coPresenterPassword: role === 'host' ? generateCoPresenterPassword() : null,
     transferProgress: 0,
     lastUpdatedBy: null,
     errorMessage: null,

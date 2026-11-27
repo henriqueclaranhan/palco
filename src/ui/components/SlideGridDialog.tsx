@@ -8,6 +8,7 @@ interface SlideGridDialogProps {
   engine: PdfEngine;
   docId: string;
   currentPage: number;
+  hostPage?: number;
   totalPages: number;
   onSelectPage: (page: number) => void;
   onClose: () => void;
@@ -57,6 +58,7 @@ export function SlideGridDialog({
   engine,
   docId,
   currentPage,
+  hostPage,
   totalPages,
   onSelectPage,
   onClose,
@@ -219,6 +221,8 @@ export function SlideGridDialog({
           <div ref={gridRef} className="slide-grid" role="list">
             {pages.map((page) => {
               const isCurrent = page === currentPage;
+              const isHostPage =
+                hostPage !== undefined && page === hostPage && !isCurrent;
               const shouldDefer =
                 totalPages > DEFERRED_THRESHOLD_PAGES &&
                 Math.abs(page - anchorPage) > IMMEDIATE_WINDOW_RADIUS;
@@ -238,11 +242,14 @@ export function SlideGridDialog({
                     data-page={page}
                     className="slide-thumb-card"
                     data-current={isCurrent}
+                    data-host-page={isHostPage || undefined}
                     aria-current={isCurrent ? 'page' : undefined}
                     aria-label={
                       isCurrent
                         ? `Slide ${page} de ${totalPages} (atual)`
-                        : `Ir para slide ${page} de ${totalPages}`
+                        : isHostPage
+                          ? `Ir para slide ${page} de ${totalPages} (anfitrião)`
+                          : `Ir para slide ${page} de ${totalPages}`
                     }
                     onClick={() => handleSelect(page)}
                   >
@@ -258,6 +265,9 @@ export function SlideGridDialog({
                       <span className="slide-thumb-number">{page}</span>
                       {isCurrent && (
                         <span className="slide-thumb-current-tag">Atual</span>
+                      )}
+                      {isHostPage && (
+                        <span className="slide-thumb-host-tag">Anfitrião</span>
                       )}
                     </span>
                   </button>

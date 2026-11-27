@@ -1,9 +1,14 @@
 import {
   PROTOCOL_VERSION,
   canPerformAction,
+  generateCoPresenterPassword,
   generateDocumentId,
+  normalizeCoPresenterPassword,
+  type GuestRole,
   type NavigationAction,
   type ParticipantRole,
+  type PeerMessage,
+  type SpectatorMode,
 } from '@/domain/protocol';
 import { validatePdfFile } from '@/domain/pdfValidation';
 import { PdfLoadError, getHostPdfErrorMessage } from '@/domain/pdfErrors';
@@ -18,6 +23,8 @@ import {
   loadHostReloadState,
   saveHostReloadState,
   updateHostReloadPage,
+  updateHostReloadPassword,
+  updateHostReloadSpectatorMode,
   type SavedHostSession,
 } from '@/infrastructure/ephemeralHostStore';
 import { PdfDocumentLoader, type PdfLoadOutcome } from './pdfDocumentLoader';
@@ -29,6 +36,8 @@ import {
   type SessionEngine,
   type SessionStore,
 } from './types';
+
+import type { DataConnection } from 'peerjs';
 
 interface HostDocumentBuffer {
   docId: string;
@@ -43,15 +52,24 @@ interface HostLoadMeta {
   showToast: boolean;
 }
 
+interface ConnectedPeerRecord {
+  conn: DataConnection;
+  role: GuestRole;
+  authenticated: boolean;
+}
+
 export interface HostReloadStore {
   load(roomCode: string): Promise<SavedHostSession | null>;
   save(
     roomCode: string,
     fileName: string,
     currentPage: number,
-    bytes: Uint8Array
+    bytes: Uint8Array,
+    coPresenterPassword?: string
   ): Promise<void>;
   updatePage(roomCode: string, currentPage: number): void;
+  updateSpectatorMode?(roomCode: string, spectatorMode: SpectatorMode): void;
+  updatePassword?(roomCode: string, coPresenterPassword: string): void;
   clear(): void;
 }
 
@@ -73,6 +91,8 @@ const defaultReloadStore: HostReloadStore = {
   load: loadHostReloadState,
   save: saveHostReloadState,
   updatePage: updateHostReloadPage,
+  updateSpectatorMode: updateHostReloadSpectatorMode,
+  updatePassword: updateHostReloadPassword,
   clear: clearHostReloadState,
 };
 
@@ -94,6 +114,7 @@ export class HostSessionController implements SessionController {
   private currentDoc: HostDocumentBuffer | null = null;
   private transferAbort: AbortController | null = null;
   private unregisterPageHide: (() => void) | null = null;
+  private readonly peers = new Map<string, ConnectedPeerRecord>();
   private active = false;
 
   constructor(options: HostSessionControllerOptions) {
@@ -132,6 +153,7 @@ export class HostSessionController implements SessionController {
     this.transport?.destroy();
     this.transport = null;
     this.currentDoc = null;
+    this.peers.clear();
     this.engine.destroy();
   }
 
@@ -145,12 +167,15 @@ export class HostSessionController implements SessionController {
     this.transport?.endSession();
     this.transport = null;
     this.currentDoc = null;
+    this.peers.clear();
     this.engine.destroy();
     this.reloadStore.clear();
     this.store.updateState((prev) => ({
       ...prev,
       status: 'ended',
       connectedPeers: 0,
+      connectedCoPresenters: 0,
+      connectedSpectators: 0,
     }));
   }
 
@@ -181,6 +206,24 @@ export class HostSessionController implements SessionController {
     this.store.notify(getHostPdfErrorMessage(passwordError));
   }
 
+  submitCoPresenterPassword(_password: string): void {
+    // Host does not authenticate as a guest.
+  }
+
+  cancelCoPresenterAuth(): void {
+    // Host does not authenticate as a guest.
+  }
+
+  regenerateCoPresenterPassword(): void {
+    const nextPassword = generateCoPresenterPassword();
+    this.reloadStore.updatePassword?.(this.roomCode, nextPassword);
+    this.store.updateState((prev) => ({
+      ...prev,
+      coPresenterPassword: nextPassword,
+    }));
+    this.store.notify('Nova senha de coapresentador gerada.');
+  }
+
   navigate(action: 'next' | 'prev' | 'goto', page?: number): void {
     const doc = this.store.getState().document;
     if (!doc) return;
@@ -193,6 +236,28 @@ export class HostSessionController implements SessionController {
     this.applyNavigation(nav, 'host');
   }
 
+  setSpectatorMode(mode: SpectatorMode): void {
+    if (!canPerformAction('host', 'configure_spectators')) return;
+    const current = this.store.getState();
+    if (current.spectatorMode === mode) return;
+
+    this.reloadStore.updateSpectatorMode?.(this.roomCode, mode);
+    this.store.updateState((prev) => ({
+      ...prev,
+      spectatorMode: mode,
+    }));
+
+    this.transport?.broadcast({
+      v: PROTOCOL_VERSION,
+      type: 'ROOM_CONFIG',
+      spectatorMode: mode,
+    });
+  }
+
+  followHost(): void {
+    // Host is always authoritative; no-op.
+  }
+
   private loadInitialDocument(): void {
     if (this.initialFile) {
       void this.loadHostFile(this.initialFile);
@@ -201,6 +266,13 @@ export class HostSessionController implements SessionController {
 
     void this.reloadStore.load(this.roomCode).then((saved) => {
       if (!this.active || !saved) return;
+      if (saved.spectatorMode || saved.coPresenterPassword) {
+        this.store.updateState((prev) => ({
+          ...prev,
+          spectatorMode: saved.spectatorMode ?? prev.spectatorMode,
+          coPresenterPassword: saved.coPresenterPassword ?? prev.coPresenterPassword,
+        }));
+      }
       void this.loadBytes(
         {
           fileName: saved.fileName,
@@ -222,34 +294,59 @@ export class HostSessionController implements SessionController {
           errorMessage: null,
         }));
       },
-      onPeerConnected: (conn) => {
+      onPeerConnected: (conn, peerRole = 'co-presenter') => {
         if (!this.active) return;
-        this.store.updateState((prev) => ({
-          ...prev,
-          connectedPeers: transport.peerCount,
-        }));
-        this.store.notify('Coapresentador conectado.');
+        const requiresAuth = peerRole === 'co-presenter';
+        const record: ConnectedPeerRecord = {
+          conn,
+          role: peerRole,
+          authenticated: !requiresAuth,
+        };
+        this.peers.set(conn.peer, record);
 
-        const doc = this.currentDoc;
-        if (doc) {
-          void this.streamDocument(conn, {
-            docId: doc.docId,
-            fileName: doc.fileName,
-            bytes: doc.bytes,
-            initialPage: this.store.getState().currentPage,
+        if (requiresAuth) {
+          this.sendToConnection(conn, {
+            v: PROTOCOL_VERSION,
+            type: 'AUTH_REQUIRED',
+            reason: 'required',
           });
+          return;
         }
+
+        this.syncPeerCounts();
+        this.store.notify('Espectador conectado.');
+        this.onPeerAuthorized(conn);
       },
-      onPeerDisconnected: () => {
+      onPeerDisconnected: (peerId, peerRole) => {
         if (!this.active) return;
-        this.store.updateState((prev) => ({
-          ...prev,
-          connectedPeers: transport.peerCount,
-        }));
-        this.store.notify('Um coapresentador saiu da sala.');
+        const existing = this.peers.get(peerId);
+        this.peers.delete(peerId);
+        this.syncPeerCounts();
+
+        if (existing && !existing.authenticated) {
+          return;
+        }
+
+        const resolvedRole = peerRole ?? existing?.role ?? 'co-presenter';
+        this.store.notify(
+          resolvedRole === 'spectator'
+            ? 'Um espectador saiu da sala.'
+            : 'Um coapresentador saiu da sala.'
+        );
       },
-      onMessage: (_peerId, msg) => {
-        if (!this.active || msg.type !== 'NAVIGATE') return;
+      onMessage: (peerId, msg) => {
+        if (!this.active) return;
+        if (msg.type === 'AUTH_SUBMIT') {
+          this.handleAuthSubmit(peerId, msg.password);
+          return;
+        }
+        if (msg.type !== 'NAVIGATE') return;
+
+        const record = this.peers.get(peerId);
+        if (record && (record.role === 'spectator' || !record.authenticated)) {
+          return;
+        }
+
         const nav: NavigationAction =
           msg.action === 'goto'
             ? { action: 'goto', page: msg.page ?? 1, docId: msg.docId }
@@ -267,6 +364,76 @@ export class HostSessionController implements SessionController {
     });
 
     this.transport = transport;
+  }
+
+  private handleAuthSubmit(peerId: string, submittedPassword: string): void {
+    const record = this.peers.get(peerId);
+    if (!record || record.role !== 'co-presenter' || record.authenticated) return;
+
+    const expected = this.store.getState().coPresenterPassword;
+    if (
+      !expected ||
+      normalizeCoPresenterPassword(submittedPassword) !==
+        normalizeCoPresenterPassword(expected)
+    ) {
+      this.sendToConnection(record.conn, {
+        v: PROTOCOL_VERSION,
+        type: 'AUTH_REQUIRED',
+        reason: 'invalid_password',
+      });
+      return;
+    }
+
+    record.authenticated = true;
+    this.syncPeerCounts();
+    this.store.notify('Coapresentador conectado.');
+    this.sendToConnection(record.conn, {
+      v: PROTOCOL_VERSION,
+      type: 'AUTH_OK',
+    });
+    this.onPeerAuthorized(record.conn);
+  }
+
+  private onPeerAuthorized(conn: DataConnection): void {
+    this.sendToConnection(conn, {
+      v: PROTOCOL_VERSION,
+      type: 'ROOM_CONFIG',
+      spectatorMode: this.store.getState().spectatorMode,
+    });
+
+    const doc = this.currentDoc;
+    if (doc) {
+      void this.streamDocument(conn, {
+        docId: doc.docId,
+        fileName: doc.fileName,
+        bytes: doc.bytes,
+        initialPage: this.store.getState().currentPage,
+      });
+    }
+  }
+
+  private sendToConnection(conn: DataConnection, message: PeerMessage): void {
+    if (conn.open && typeof conn.send === 'function') {
+      conn.send(message);
+    } else if (conn.peer) {
+      this.transport?.sendTo?.(conn.peer, message);
+    }
+  }
+
+  private syncPeerCounts(): void {
+    let coPresenters = 0;
+    let spectators = 0;
+    for (const record of this.peers.values()) {
+      if (!record.authenticated) continue;
+      if (record.role === 'spectator') spectators += 1;
+      else coPresenters += 1;
+    }
+    this.store.updateState((prev) => ({
+      ...prev,
+      connectedPeers: coPresenters + spectators,
+      connectedCoPresenters: coPresenters,
+      connectedSpectators: spectators,
+    }));
   }
 
   private async loadBytes(meta: HostLoadMeta, bytes: Uint8Array): Promise<void> {
@@ -298,7 +465,13 @@ export class HostSessionController implements SessionController {
     };
     this.currentDoc = docBuffer;
 
-    void this.reloadStore.save(this.roomCode, meta.fileName, safePage, bytes);
+    void this.reloadStore.save(
+      this.roomCode,
+      meta.fileName,
+      safePage,
+      bytes,
+      this.store.getState().coPresenterPassword ?? undefined
+    );
 
     this.store.updateState((prev) => ({
       ...prev,
@@ -310,6 +483,7 @@ export class HostSessionController implements SessionController {
         totalPages,
       },
       currentPage: safePage,
+      hostPage: safePage,
       revision: prev.revision + 1,
       lastUpdatedBy: 'host',
       errorMessage: null,
@@ -332,8 +506,13 @@ export class HostSessionController implements SessionController {
     const controller = new AbortController();
     this.transferAbort = controller;
 
+    const authorizedConnections = transport.activeConnections.filter((conn) => {
+      const record = this.peers.get(conn.peer);
+      return !record || record.authenticated;
+    });
+
     await Promise.all(
-      transport.activeConnections.map((conn) =>
+      authorizedConnections.map((conn) =>
         this.streamDocument(
           conn,
           {
@@ -362,6 +541,7 @@ export class HostSessionController implements SessionController {
     this.store.updateState((prev) => ({
       ...prev,
       currentPage: targetPage,
+      hostPage: targetPage,
       revision: nextRevision,
       lastUpdatedBy: initiator,
     }));

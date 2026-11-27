@@ -6,6 +6,7 @@ interface PdfStageProps {
   docId: string;
   pageNumber: number;
   totalPages: number;
+  canNavigate?: boolean;
   onNext: () => void;
   onPrev: () => void;
   swipeHandlers: {
@@ -19,6 +20,7 @@ export function PdfStage({
   docId,
   pageNumber,
   totalPages,
+  canNavigate = true,
   onNext,
   onPrev,
   swipeHandlers,
@@ -63,18 +65,20 @@ export function PdfStage({
   return (
     <div
       className="stage-container"
-      onTouchStart={swipeHandlers.onTouchStart}
-      onTouchEnd={swipeHandlers.onTouchEnd}
+      onTouchStart={canNavigate ? swipeHandlers.onTouchStart : undefined}
+      onTouchEnd={canNavigate ? swipeHandlers.onTouchEnd : undefined}
     >
-      <button
-        type="button"
-        className="stage-nav-zone stage-nav-zone-prev"
-        aria-label="Página anterior"
-        aria-disabled={!canPrev}
-        onClick={() => {
-          if (canPrev) onPrev();
-        }}
-      />
+      {canNavigate && (
+        <button
+          type="button"
+          className="stage-nav-zone stage-nav-zone-prev"
+          aria-label="Página anterior"
+          aria-disabled={!canPrev}
+          onClick={() => {
+            if (canPrev) onPrev();
+          }}
+        />
+      )}
 
       <div className="stage-canvas-frame" ref={frameRef}>
         <canvas
@@ -85,15 +89,17 @@ export function PdfStage({
         />
       </div>
 
-      <button
-        type="button"
-        className="stage-nav-zone stage-nav-zone-next"
-        aria-label="Próxima página"
-        aria-disabled={!canNext}
-        onClick={() => {
-          if (canNext) onNext();
-        }}
-      />
+      {canNavigate && (
+        <button
+          type="button"
+          className="stage-nav-zone stage-nav-zone-next"
+          aria-label="Próxima página"
+          aria-disabled={!canNext}
+          onClick={() => {
+            if (canNext) onNext();
+          }}
+        />
+      )}
     </div>
   );
 }

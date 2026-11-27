@@ -7,10 +7,14 @@ export const MAX_PDF_BYTES = env.maxPdfBytes;
 const ROOM_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const ROOM_CODE_LENGTH = 8;
 const ROOM_CODE_GROUP_SIZE = 4;
+const CO_PRESENTER_PASSWORD_LENGTH = 6;
+const MAX_PASSWORD_LENGTH = 64;
 const DOC_ID_BYTE_LENGTH = 6;
 const MAX_FILENAME_LENGTH = 200;
 
-export type ParticipantRole = 'host' | 'co-presenter';
+export type ParticipantRole = 'host' | 'co-presenter' | 'spectator';
+export type GuestRole = Exclude<ParticipantRole, 'host'>;
+export type SpectatorMode = 'follow' | 'free';
 
 export type NavigationAction =
   | { action: 'next'; docId: string }
@@ -56,6 +60,25 @@ export type PeerMessage =
     }
   | {
       v: typeof PROTOCOL_VERSION;
+      type: 'ROOM_CONFIG';
+      spectatorMode: SpectatorMode;
+    }
+  | {
+      v: typeof PROTOCOL_VERSION;
+      type: 'AUTH_REQUIRED';
+      reason: 'required' | 'invalid_password';
+    }
+  | {
+      v: typeof PROTOCOL_VERSION;
+      type: 'AUTH_SUBMIT';
+      password: string;
+    }
+  | {
+      v: typeof PROTOCOL_VERSION;
+      type: 'AUTH_OK';
+    }
+  | {
+      v: typeof PROTOCOL_VERSION;
       type: 'SESSION_END';
       reason: 'host_ended';
     }
@@ -78,10 +101,12 @@ export type PrivilegedAction =
   | 'replace_document'
   | 'end_session'
   | 'invite_copresenter'
+  | 'configure_spectators'
   | 'navigate'
   | 'toggle_fullscreen';
 
-// only the host can swap the PDF, invite, or close the room
+// only the host can swap the PDF, invite, configure spectators, or close the room;
+// spectators can never trigger authoritative room navigation
 export function canPerformAction(
   role: ParticipantRole,
   action: PrivilegedAction
@@ -90,8 +115,10 @@ export function canPerformAction(
     case 'replace_document':
     case 'end_session':
     case 'invite_copresenter':
+    case 'configure_spectators':
       return role === 'host';
     case 'navigate':
+      return role === 'host' || role === 'co-presenter';
     case 'toggle_fullscreen':
       return true;
   }
@@ -128,6 +155,20 @@ export function generateDocumentId(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+export function generateCoPresenterPassword(): string {
+  const bytes = new Uint8Array(CO_PRESENTER_PASSWORD_LENGTH);
+  crypto.getRandomValues(bytes);
+  let password = '';
+  for (let i = 0; i < CO_PRESENTER_PASSWORD_LENGTH; i++) {
+    password += ROOM_ALPHABET[bytes[i] % ROOM_ALPHABET.length];
+  }
+  return password;
+}
+
+export function normalizeCoPresenterPassword(input: string): string {
+  return input.trim().toUpperCase();
+}
+
 export function parsePeerMessage(raw: unknown): PeerMessage | null {
   if (!isRecord(raw) || raw.v !== PROTOCOL_VERSION || typeof raw.type !== 'string') {
     return null;
@@ -144,6 +185,14 @@ export function parsePeerMessage(raw: unknown): PeerMessage | null {
       return parseSyncPage(raw);
     case 'NAVIGATE':
       return parseNavigate(raw);
+    case 'ROOM_CONFIG':
+      return parseRoomConfig(raw);
+    case 'AUTH_REQUIRED':
+      return parseAuthRequired(raw);
+    case 'AUTH_SUBMIT':
+      return parseAuthSubmit(raw);
+    case 'AUTH_OK':
+      return { v: PROTOCOL_VERSION, type: 'AUTH_OK' };
     case 'SESSION_END':
       return parseSessionEnd(raw);
     case 'PEER_LEAVE':
@@ -173,7 +222,15 @@ function isNonNegativeNumber(value: unknown): value is number {
 }
 
 function isParticipantRole(value: unknown): value is ParticipantRole {
-  return value === 'host' || value === 'co-presenter';
+  return value === 'host' || value === 'co-presenter' || value === 'spectator';
+}
+
+export function isGuestRole(value: unknown): value is GuestRole {
+  return value === 'co-presenter' || value === 'spectator';
+}
+
+export function isSpectatorMode(value: unknown): value is SpectatorMode {
+  return value === 'follow' || value === 'free';
 }
 
 function parseDocMeta(raw: Record<string, unknown>): PeerMessage | null {
@@ -262,6 +319,35 @@ function parseNavigate(raw: Record<string, unknown>): PeerMessage | null {
   }
 
   return null;
+}
+
+function parseRoomConfig(raw: Record<string, unknown>): PeerMessage | null {
+  if (!isSpectatorMode(raw.spectatorMode)) return null;
+  return {
+    v: PROTOCOL_VERSION,
+    type: 'ROOM_CONFIG',
+    spectatorMode: raw.spectatorMode,
+  };
+}
+
+function parseAuthRequired(raw: Record<string, unknown>): PeerMessage | null {
+  if (raw.reason !== 'required' && raw.reason !== 'invalid_password') return null;
+  return {
+    v: PROTOCOL_VERSION,
+    type: 'AUTH_REQUIRED',
+    reason: raw.reason,
+  };
+}
+
+function parseAuthSubmit(raw: Record<string, unknown>): PeerMessage | null {
+  if (typeof raw.password !== 'string') return null;
+  const trimmed = raw.password.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_PASSWORD_LENGTH) return null;
+  return {
+    v: PROTOCOL_VERSION,
+    type: 'AUTH_SUBMIT',
+    password: trimmed,
+  };
 }
 
 function parseSessionEnd(raw: Record<string, unknown>): PeerMessage | null {

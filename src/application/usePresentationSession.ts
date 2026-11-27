@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ParticipantRole } from '@/domain/protocol';
+import type { ParticipantRole, SpectatorMode } from '@/domain/protocol';
 import { createInitialSessionState, type SessionState } from '@/domain/session';
 import { PdfEngine } from '@/infrastructure/pdfEngine';
 import { acquireWakeLock } from '@/infrastructure/browserApis';
 import { HostSessionController } from './session/hostSessionController';
 import { GuestSessionController } from './session/guestSessionController';
-import type { PasswordRequest, SessionController, SessionStore } from './session/types';
+import type {
+  PasswordRequest,
+  RoomAuthRequest,
+  SessionController,
+  SessionStore,
+} from './session/types';
 
-export type { PasswordRequest } from './session/types';
+export type { PasswordRequest, RoomAuthRequest } from './session/types';
 
 export interface UsePresentationSessionOptions {
   role: ParticipantRole;
@@ -26,6 +31,7 @@ export function usePresentationSession({
     createInitialSessionState(role, roomCode)
   );
   const [passwordRequest, setPasswordRequest] = useState<PasswordRequest | null>(null);
+  const [roomAuthRequest, setRoomAuthRequest] = useState<RoomAuthRequest | null>(null);
 
   const engineRef = useRef<PdfEngine | null>(null);
   if (!engineRef.current) {
@@ -53,6 +59,7 @@ export function usePresentationSession({
         });
       },
       setPasswordRequest,
+      setRoomAuthRequest,
       notify: (message) => noticeRef.current?.(message),
     };
 
@@ -60,7 +67,7 @@ export function usePresentationSession({
     const controller: SessionController =
       role === 'host'
         ? new HostSessionController({ roomCode, initialFile, engine, store })
-        : new GuestSessionController({ roomCode, engine, store });
+        : new GuestSessionController({ roomCode, role, engine, store });
 
     controllerRef.current = controller;
     controller.start();
@@ -88,6 +95,18 @@ export function usePresentationSession({
     controllerRef.current?.cancelPdfPassword();
   }, []);
 
+  const submitCoPresenterPassword = useCallback((password: string) => {
+    controllerRef.current?.submitCoPresenterPassword(password);
+  }, []);
+
+  const cancelCoPresenterAuth = useCallback(() => {
+    controllerRef.current?.cancelCoPresenterAuth();
+  }, []);
+
+  const regenerateCoPresenterPassword = useCallback(() => {
+    controllerRef.current?.regenerateCoPresenterPassword();
+  }, []);
+
   const nextPage = useCallback(() => {
     controllerRef.current?.navigate('next');
   }, []);
@@ -104,16 +123,30 @@ export function usePresentationSession({
     controllerRef.current?.endSession();
   }, []);
 
+  const setSpectatorMode = useCallback((mode: SpectatorMode) => {
+    controllerRef.current?.setSpectatorMode(mode);
+  }, []);
+
+  const followHost = useCallback(() => {
+    controllerRef.current?.followHost();
+  }, []);
+
   return {
     state,
     engine: engineRef.current,
     passwordRequest,
+    roomAuthRequest,
     loadHostFile,
     submitPdfPassword,
     cancelPdfPassword,
+    submitCoPresenterPassword,
+    cancelCoPresenterAuth,
+    regenerateCoPresenterPassword,
     nextPage,
     prevPage,
     goToPage,
     endSession,
+    setSpectatorMode,
+    followHost,
   };
 }

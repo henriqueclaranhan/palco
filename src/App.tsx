@@ -36,16 +36,28 @@ function parseInitialRoute(): RouteState {
     return { view: 'privacy' };
   }
 
+  const searchParams = new URLSearchParams(window.location.search);
+  const spectatorPathMatch = window.location.pathname.match(/^\/v\/([^/]+)\/?$/i);
+  if (spectatorPathMatch?.[1]) {
+    const normalized = normalizeRoomCode(spectatorPathMatch[1]);
+    if (isValidRoomCode(normalized)) {
+      return { view: 'room', role: 'spectator', roomCode: normalized };
+    }
+  }
+
   const pathMatch = window.location.pathname.match(/^\/s\/([^/]+)\/?$/i);
-  const queryCode = new URLSearchParams(window.location.search).get('room');
+  const queryCode = searchParams.get('room');
   const rawCode = pathMatch?.[1] ?? queryCode;
 
   if (rawCode) {
     const normalized = normalizeRoomCode(rawCode);
     if (isValidRoomCode(normalized)) {
-      const role: ParticipantRole = isHostTabForRoom(normalized)
-        ? 'host'
-        : 'co-presenter';
+      const isSpectatorQuery = searchParams.get('mode') === 'spectator';
+      const role: ParticipantRole = isSpectatorQuery
+        ? 'spectator'
+        : isHostTabForRoom(normalized)
+          ? 'host'
+          : 'co-presenter';
       return { view: 'room', role, roomCode: normalized };
     }
   }
