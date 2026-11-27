@@ -7,6 +7,10 @@
     {
       "source": "/s/:path*",
       "destination": "/index.html"
+    },
+    {
+      "source": "/privacidade",
+      "destination": "/index.html"
     }
   ],
   "headers": [

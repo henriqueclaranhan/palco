@@ -1,6 +1,7 @@
 interface BrandMarkProps {
   compactOnMobile?: boolean;
   asLink?: boolean;
+  onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
 }
 
 function BrandGlyph() {
@@ -23,7 +24,11 @@ function BrandGlyph() {
   );
 }
 
-export function BrandMark({ compactOnMobile = false, asLink = false }: BrandMarkProps) {
+export function BrandMark({
+  compactOnMobile = false,
+  asLink = false,
+  onClick,
+}: BrandMarkProps) {
   const content = (
     <>
       <BrandGlyph />
@@ -35,7 +40,7 @@ export function BrandMark({ compactOnMobile = false, asLink = false }: BrandMark
 
   if (asLink) {
     return (
-      <a href="/" className="brand" translate="no">
+      <a href="/" className="brand" translate="no" onClick={onClick}>
         {content}
       </a>
     );

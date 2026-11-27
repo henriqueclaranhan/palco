@@ -15,6 +15,7 @@ import {
   useDocumentMeta,
 } from '@/application/useDocumentMeta';
 import { HomePage } from '@/ui/pages/HomePage';
+import { PrivacyPage } from '@/ui/pages/PrivacyPage';
 
 const RoomPage = lazy(() =>
   import('@/ui/pages/RoomPage').then((module) => ({ default: module.RoomPage }))
@@ -22,6 +23,7 @@ const RoomPage = lazy(() =>
 
 type RouteState =
   | { view: 'home' }
+  | { view: 'privacy' }
   | {
       view: 'room';
       role: ParticipantRole;
@@ -30,6 +32,10 @@ type RouteState =
     };
 
 function parseInitialRoute(): RouteState {
+  if (/^\/privacidade\/?$/i.test(window.location.pathname)) {
+    return { view: 'privacy' };
+  }
+
   const pathMatch = window.location.pathname.match(/^\/s\/([^/]+)\/?$/i);
   const queryCode = new URLSearchParams(window.location.search).get('room');
   const rawCode = pathMatch?.[1] ?? queryCode;
@@ -50,8 +56,12 @@ export function App() {
   const [route, setRoute] = useState<RouteState>(parseInitialRoute);
 
   useDocumentMeta(
-    route.view === 'home' ? DEFAULT_DOCUMENT_TITLE : formatRoomTitle(route.roomCode),
-    route.view === 'home' ? 'index, follow' : 'noindex, nofollow'
+    route.view === 'home'
+      ? DEFAULT_DOCUMENT_TITLE
+      : route.view === 'privacy'
+        ? 'Privacidade | Palco'
+        : formatRoomTitle(route.roomCode),
+    route.view === 'room' ? 'noindex, nofollow' : 'index, follow'
   );
 
   useEffect(() => {
@@ -84,10 +94,27 @@ export function App() {
     clearHostReloadState();
     window.history.pushState(null, '', '/');
     setRoute({ view: 'home' });
+    window.scrollTo({ top: 0 });
+  }, []);
+
+  const handleOpenPrivacy = useCallback(() => {
+    window.history.pushState(null, '', '/privacidade');
+    setRoute({ view: 'privacy' });
+    window.scrollTo({ top: 0 });
   }, []);
 
   if (route.view === 'home') {
-    return <HomePage onStartAsHost={handleStartAsHost} onJoinRoom={handleJoinRoom} />;
+    return (
+      <HomePage
+        onStartAsHost={handleStartAsHost}
+        onJoinRoom={handleJoinRoom}
+        onOpenPrivacy={handleOpenPrivacy}
+      />
+    );
+  }
+
+  if (route.view === 'privacy') {
+    return <PrivacyPage onNavigateHome={handleLeaveToHome} />;
   }
 
   return (

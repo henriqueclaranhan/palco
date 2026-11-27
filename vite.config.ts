@@ -62,15 +62,21 @@ function seoPlugin(siteUrl: string | null): Plugin {
       const absOutDir = path.resolve(process.cwd(), outDir);
       if (!fs.existsSync(absOutDir)) return;
 
-      const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>${siteUrl}/</loc>
-    <changefreq>weekly</changefreq>
-    <priority>1.0</priority>
-  </url>
-</urlset>
-`;
+      const sitemap = /* XML */ `<?xml version="1.0" encoding="UTF-8"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+          <url>
+            <loc>${siteUrl}/</loc>
+            <changefreq>weekly</changefreq>
+            <priority>1.0</priority>
+          </url>
+          <url>
+            <loc>${siteUrl}/privacidade</loc>
+            <changefreq>monthly</changefreq>
+            <priority>0.3</priority>
+          </url>
+        </urlset>
+      `;
+
       fs.writeFileSync(path.join(absOutDir, 'sitemap.xml'), sitemap, 'utf8');
 
       const robotsPath = path.join(absOutDir, 'robots.txt');

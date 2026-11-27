@@ -10,9 +10,10 @@ import { ThemeToggle } from '@/ui/components/ThemeToggle';
 interface HomePageProps {
   onStartAsHost: (file: File) => void;
   onJoinRoom: (roomCode: string) => void;
+  onOpenPrivacy: () => void;
 }
 
-export function HomePage({ onStartAsHost, onJoinRoom }: HomePageProps) {
+export function HomePage({ onStartAsHost, onJoinRoom, onOpenPrivacy }: HomePageProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -165,6 +166,19 @@ export function HomePage({ onStartAsHost, onJoinRoom }: HomePageProps) {
             <span>Tela cheia e gestos no desktop e mobile</span>
           </li>
         </ul>
+        <a
+          href="/privacidade"
+          className="home-footer-link"
+          onClick={(e) => {
+            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+              return;
+            }
+            e.preventDefault();
+            onOpenPrivacy();
+          }}
+        >
+          Privacidade
+        </a>
       </footer>
     </div>
   );

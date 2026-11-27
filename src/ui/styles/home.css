@@ -181,6 +181,20 @@
   gap: 0.4rem;
 }
 
+.home-footer-link {
+  color: var(--ink-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border-strong);
+}
+
+@media (hover: hover) {
+  .home-footer-link:hover {
+    color: var(--ink-primary);
+    text-decoration-color: currentColor;
+  }
+}
+
 .preview-frame {
   container: preview / inline-size;
   background-color: var(--bg-surface);
