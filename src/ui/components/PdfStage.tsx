@@ -57,20 +57,24 @@ export function PdfStage({
     void engine.renderPage(pageNumber, canvas, size);
   }, [engine, docId, pageNumber, size]);
 
+  const canPrev = pageNumber > 1;
+  const canNext = pageNumber < totalPages;
+
   return (
     <div
       className="stage-container"
       onTouchStart={swipeHandlers.onTouchStart}
       onTouchEnd={swipeHandlers.onTouchEnd}
     >
-      {pageNumber > 1 && (
-        <button
-          type="button"
-          className="stage-nav-zone stage-nav-zone-prev"
-          aria-label="Página anterior"
-          onClick={onPrev}
-        />
-      )}
+      <button
+        type="button"
+        className="stage-nav-zone stage-nav-zone-prev"
+        aria-label="Página anterior"
+        aria-disabled={!canPrev}
+        onClick={() => {
+          if (canPrev) onPrev();
+        }}
+      />
 
       <div className="stage-canvas-frame" ref={frameRef}>
         <canvas
@@ -81,14 +85,15 @@ export function PdfStage({
         />
       </div>
 
-      {pageNumber < totalPages && (
-        <button
-          type="button"
-          className="stage-nav-zone stage-nav-zone-next"
-          aria-label="Próxima página"
-          onClick={onNext}
-        />
-      )}
+      <button
+        type="button"
+        className="stage-nav-zone stage-nav-zone-next"
+        aria-label="Próxima página"
+        aria-disabled={!canNext}
+        onClick={() => {
+          if (canNext) onNext();
+        }}
+      />
     </div>
   );
 }

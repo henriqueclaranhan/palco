@@ -312,14 +312,23 @@
 .stage-nav-zone {
   position: absolute;
   inset-block: 0;
-  inline-size: 14%;
-  min-inline-size: 48px;
-  max-inline-size: 140px;
+  inline-size: 32%;
+  min-inline-size: 84px;
   background: transparent;
   border: 0;
   padding: 0;
   cursor: pointer;
   z-index: 5;
+}
+
+.room-shell[data-fullscreen='true'] .stage-nav-zone {
+  inline-size: 14%;
+  min-inline-size: 48px;
+  max-inline-size: 140px;
+}
+
+.stage-nav-zone[aria-disabled='true'] {
+  cursor: not-allowed;
 }
 
 .stage-nav-zone-prev {
