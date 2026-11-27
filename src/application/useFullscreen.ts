@@ -27,7 +27,7 @@ export function useFullscreen(targetRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     if (!isPseudoFullscreen) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !document.querySelector('dialog[open]')) {
         setIsPseudoFullscreen(false);
         setIsFullscreen(false);
       }

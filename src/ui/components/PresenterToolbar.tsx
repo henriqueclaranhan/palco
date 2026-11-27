@@ -1,13 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  LayoutGrid,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react';
 
 interface PresenterToolbarProps {
   currentPage: number;
   totalPages: number;
   isFullscreen: boolean;
+  isSlideGridOpen: boolean;
   onPrev: () => void;
   onNext: () => void;
   onGoToPage: (page: number) => void;
+  onToggleSlideGrid: () => void;
   onToggleFullscreen: () => void;
 }
 
@@ -15,9 +23,11 @@ export function PresenterToolbar({
   currentPage,
   totalPages,
   isFullscreen,
+  isSlideGridOpen,
   onPrev,
   onNext,
   onGoToPage,
+  onToggleSlideGrid,
   onToggleFullscreen,
 }: PresenterToolbarProps) {
   const toolbarRef = useRef<HTMLDivElement | null>(null);
@@ -163,6 +173,19 @@ export function PresenterToolbar({
         />
 
         <div role="group" aria-label="Exibição" className="toolbar-group">
+          <button
+            type="button"
+            className="btn btn-surface toolbar-fs-btn"
+            aria-label="Grade de slides"
+            aria-haspopup="dialog"
+            aria-expanded={isSlideGridOpen}
+            title="Grade de slides (G)"
+            onClick={onToggleSlideGrid}
+          >
+            <LayoutGrid size={17} aria-hidden="true" />
+            <span className="topbar-label-desktop">Slides</span>
+          </button>
+
           <button
             type="button"
             className="btn btn-surface toolbar-fs-btn"

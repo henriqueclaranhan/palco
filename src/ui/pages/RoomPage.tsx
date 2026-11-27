@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Minimize2 } from 'lucide-react';
 import type { ParticipantRole } from '@/domain/protocol';
 import { formatBytes } from '@/domain/session';
@@ -10,10 +10,12 @@ import { formatRoomTitle, useDocumentMeta } from '@/application/useDocumentMeta'
 import { TopBar } from '@/ui/components/TopBar';
 import { PdfStage } from '@/ui/components/PdfStage';
 import { StageOverlay } from '@/ui/components/StageOverlay';
+import { SlideFilmstrip } from '@/ui/components/SlideFilmstrip';
 import { PresenterToolbar } from '@/ui/components/PresenterToolbar';
 import { InviteDialog } from '@/ui/components/InviteDialog';
 import { ConfirmDialog } from '@/ui/components/ConfirmDialog';
 import { PasswordDialog } from '@/ui/components/PasswordDialog';
+import { SlideGridDialog } from '@/ui/components/SlideGridDialog';
 import { ToastRegion } from '@/ui/components/ToastRegion';
 
 interface RoomPageProps {
@@ -32,6 +34,7 @@ export function RoomPage({
   const shellRef = useRef<HTMLDivElement | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [confirmEndOpen, setConfirmEndOpen] = useState(false);
+  const [slideGridOpen, setSlideGridOpen] = useState(false);
 
   const { toasts, pushToast, dismissToast } = useToasts();
 
@@ -70,6 +73,19 @@ export function RoomPage({
     state.status !== 'reconnecting' &&
     state.status !== 'transferring';
 
+  const canOpenSlideGrid = hasRenderableDoc && !passwordRequest && totalPages > 0;
+
+  useEffect(() => {
+    if (!canOpenSlideGrid && slideGridOpen) {
+      setSlideGridOpen(false);
+    }
+  }, [canOpenSlideGrid, slideGridOpen]);
+
+  const toggleSlideGrid = useCallback(() => {
+    if (!canOpenSlideGrid) return;
+    setSlideGridOpen((prev) => !prev);
+  }, [canOpenSlideGrid]);
+
   const { swipeHandlers } = useKeyboardAndSwipe({
     enabled: hasRenderableDoc && !passwordRequest,
     totalPages,
@@ -78,6 +94,7 @@ export function RoomPage({
     onFirst: () => goToPage(1),
     onLast: () => goToPage(totalPages),
     onToggleFullscreen: toggleFullscreen,
+    onToggleSlideGrid: toggleSlideGrid,
   });
 
   const inviteUrl = useMemo(
@@ -148,18 +165,6 @@ export function RoomPage({
           />
         )}
 
-        {!isFullscreen && hasRenderableDoc && state.document && (
-          <PresenterToolbar
-            currentPage={state.currentPage}
-            totalPages={state.document.totalPages}
-            isFullscreen={isFullscreen}
-            onPrev={prevPage}
-            onNext={nextPage}
-            onGoToPage={goToPage}
-            onToggleFullscreen={toggleFullscreen}
-          />
-        )}
-
         {isPseudoFullscreen && (
           <button
             type="button"
@@ -171,6 +176,30 @@ export function RoomPage({
           </button>
         )}
       </main>
+
+      {!isFullscreen && hasRenderableDoc && state.document && (
+        <div className="room-bottom-dock">
+          <SlideFilmstrip
+            engine={engine}
+            docId={state.document.docId}
+            currentPage={state.currentPage}
+            totalPages={state.document.totalPages}
+            onSelectPage={goToPage}
+          />
+
+          <PresenterToolbar
+            currentPage={state.currentPage}
+            totalPages={state.document.totalPages}
+            isFullscreen={isFullscreen}
+            isSlideGridOpen={slideGridOpen}
+            onPrev={prevPage}
+            onNext={nextPage}
+            onGoToPage={goToPage}
+            onToggleSlideGrid={toggleSlideGrid}
+            onToggleFullscreen={toggleFullscreen}
+          />
+        </div>
+      )}
 
       {role === 'host' && (
         <>
@@ -201,6 +230,18 @@ export function RoomPage({
         onSubmit={(password) => void submitPdfPassword(password)}
         onCancel={cancelPdfPassword}
       />
+
+      {state.document && (
+        <SlideGridDialog
+          open={slideGridOpen && canOpenSlideGrid}
+          engine={engine}
+          docId={state.document.docId}
+          currentPage={state.currentPage}
+          totalPages={state.document.totalPages}
+          onSelectPage={goToPage}
+          onClose={() => setSlideGridOpen(false)}
+        />
+      )}
 
       {!isFullscreen && <ToastRegion toasts={toasts} onDismiss={dismissToast} />}
     </div>

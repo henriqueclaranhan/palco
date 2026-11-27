@@ -16,10 +16,29 @@ export interface ViewportBounds {
   height: number;
 }
 
+export const SLIDE_THUMBNAIL_BOUNDS: ViewportBounds = {
+  width: 240,
+  height: 180,
+};
+
 const MAX_CACHE_PAGES = 5;
+const MAX_THUMBNAIL_CACHE_PAGES = 96;
 const MAX_DEVICE_PIXEL_RATIO = 2.25;
+const MAX_THUMBNAIL_PIXEL_RATIO = 1.5;
+const MAX_CONCURRENT_THUMBNAIL_RENDERS = 2;
 const PREFETCH_DELAY_MS = 180;
 const SLIDE_BACKGROUND_COLOR = '#FFFFFF';
+const DEFAULT_SLIDE_ASPECT_RATIO = 16 / 9;
+
+interface OffscreenRenderOptions {
+  pageNumber: number;
+  bounds: ViewportBounds;
+  expectedVersion: number;
+  cacheKey: string;
+  maxDpr: number;
+  trackActiveTask: boolean;
+  signal?: AbortSignal;
+}
 
 export interface PdfLoadOptions {
   password?: string;
@@ -31,6 +50,10 @@ export class PdfEngine {
   private doc: PDFDocumentProxy | null = null;
   private activeRenderTask: RenderTask | null = null;
   private readonly cache = new LruPageCache(MAX_CACHE_PAGES);
+  private readonly thumbnailCache = new LruPageCache(MAX_THUMBNAIL_CACHE_PAGES);
+  private activeThumbnailRenders = 0;
+  private thumbnailWaiters: Array<(granted: boolean) => void> = [];
+  private defaultAspectRatio: number | null = null;
   private prefetchTimer: number | null = null;
   private docVersion = 0;
 
@@ -68,7 +91,10 @@ export class PdfEngine {
 
     this.pendingLoadTask = null;
     this.cancelPendingWork();
+    this.flushThumbnailWaiters();
     this.cache.clear();
+    this.thumbnailCache.clear();
+    this.defaultAspectRatio = null;
     this.docVersion += 1;
 
     if (this.loadingTask) {
@@ -100,28 +126,113 @@ export class PdfEngine {
     const cacheKey = this.buildCacheKey(pageNumber, bounds);
     const cached = this.cache.get(cacheKey);
     if (cached) {
-      blitToTargetCanvas(cached, targetCanvas);
+      blitToCanvas(cached, targetCanvas, true);
       this.scheduleAdjacentPrefetch(pageNumber, bounds, currentVersion);
       return { width: cached.cssWidth, height: cached.cssHeight };
     }
 
-    const rendered = await this.renderToOffscreen(
+    const rendered = await this.renderOffscreenPage({
       pageNumber,
       bounds,
-      currentVersion,
-      true
-    );
+      expectedVersion: currentVersion,
+      cacheKey,
+      maxDpr: MAX_DEVICE_PIXEL_RATIO,
+      trackActiveTask: true,
+    });
     if (!rendered) return null;
 
     this.cache.set(rendered);
-    blitToTargetCanvas(rendered, targetCanvas);
+    blitToCanvas(rendered, targetCanvas, true);
     this.scheduleAdjacentPrefetch(pageNumber, bounds, currentVersion);
     return { width: rendered.cssWidth, height: rendered.cssHeight };
   }
 
+  async getDefaultAspectRatio(): Promise<number> {
+    if (this.defaultAspectRatio !== null) {
+      return this.defaultAspectRatio;
+    }
+    if (!this.doc || this.doc.numPages < 1) {
+      return DEFAULT_SLIDE_ASPECT_RATIO;
+    }
+
+    const currentVersion = this.docVersion;
+    try {
+      const page = await this.doc.getPage(1);
+      if (currentVersion !== this.docVersion) {
+        return DEFAULT_SLIDE_ASPECT_RATIO;
+      }
+      const viewport = page.getViewport({ scale: 1 });
+      if (viewport.width > 0 && viewport.height > 0) {
+        const ratio = Math.min(2.4, Math.max(0.6, viewport.width / viewport.height));
+        this.defaultAspectRatio = ratio;
+        return ratio;
+      }
+    } catch {
+      // fall back to default 16:9 aspect ratio
+    }
+    return DEFAULT_SLIDE_ASPECT_RATIO;
+  }
+
+  async renderThumbnail(
+    pageNumber: number,
+    targetCanvas: HTMLCanvasElement,
+    bounds: ViewportBounds,
+    signal?: AbortSignal
+  ): Promise<ViewportBounds | null> {
+    if (!this.isRenderable(pageNumber, bounds) || signal?.aborted) return null;
+
+    const currentVersion = this.docVersion;
+    const cacheKey = this.buildThumbnailCacheKey(pageNumber, bounds);
+    const cached = this.thumbnailCache.get(cacheKey);
+    if (cached) {
+      blitToCanvas(cached, targetCanvas, false);
+      return { width: cached.cssWidth, height: cached.cssHeight };
+    }
+
+    const acquired = await this.acquireThumbnailSlot(signal);
+    if (!acquired) return null;
+
+    try {
+      if (currentVersion !== this.docVersion || signal?.aborted || !this.doc) {
+        return null;
+      }
+
+      const cachedAfterWait = this.thumbnailCache.get(cacheKey);
+      if (cachedAfterWait) {
+        blitToCanvas(cachedAfterWait, targetCanvas, false);
+        return {
+          width: cachedAfterWait.cssWidth,
+          height: cachedAfterWait.cssHeight,
+        };
+      }
+
+      const rendered = await this.renderOffscreenPage({
+        pageNumber,
+        bounds,
+        expectedVersion: currentVersion,
+        cacheKey,
+        maxDpr: MAX_THUMBNAIL_PIXEL_RATIO,
+        trackActiveTask: false,
+        signal,
+      });
+      if (!rendered || signal?.aborted || currentVersion !== this.docVersion) {
+        return null;
+      }
+
+      this.thumbnailCache.set(rendered);
+      blitToCanvas(rendered, targetCanvas, false);
+      return { width: rendered.cssWidth, height: rendered.cssHeight };
+    } finally {
+      this.releaseThumbnailSlot();
+    }
+  }
+
   destroy(): void {
     this.cancelPendingWork();
+    this.flushThumbnailWaiters();
     this.cache.clear();
+    this.thumbnailCache.clear();
+    this.defaultAspectRatio = null;
     this.docVersion += 1;
     if (this.pendingLoadTask) {
       void this.pendingLoadTask.destroy().catch(() => undefined);
@@ -159,23 +270,97 @@ export class PdfEngine {
     return `${this.docVersion}:${pageNumber}:${Math.round(bounds.width)}x${Math.round(bounds.height)}`;
   }
 
-  private async renderToOffscreen(
-    pageNumber: number,
-    bounds: ViewportBounds,
-    expectedVersion: number,
-    trackActiveTask: boolean
-  ): Promise<RenderedPageEntry | null> {
-    if (!this.doc) return null;
+  private buildThumbnailCacheKey(pageNumber: number, bounds: ViewportBounds): string {
+    return `thumb:${this.docVersion}:${pageNumber}:${Math.round(bounds.width)}x${Math.round(bounds.height)}`;
+  }
+
+  private canStartThumbnailRender(): boolean {
+    return (
+      this.activeRenderTask === null &&
+      this.activeThumbnailRenders < MAX_CONCURRENT_THUMBNAIL_RENDERS
+    );
+  }
+
+  private acquireThumbnailSlot(signal?: AbortSignal): Promise<boolean> {
+    if (signal?.aborted) return Promise.resolve(false);
+    if (this.canStartThumbnailRender()) {
+      this.activeThumbnailRenders += 1;
+      return Promise.resolve(true);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      const onWake = (granted: boolean) => {
+        if (signal) {
+          signal.removeEventListener('abort', onAbort);
+        }
+        if (!granted) {
+          resolve(false);
+          return;
+        }
+        if (signal?.aborted) {
+          this.releaseThumbnailSlot();
+          resolve(false);
+          return;
+        }
+        resolve(true);
+      };
+
+      const onAbort = () => {
+        const idx = this.thumbnailWaiters.indexOf(onWake);
+        if (idx !== -1) {
+          this.thumbnailWaiters.splice(idx, 1);
+        }
+        resolve(false);
+      };
+
+      this.thumbnailWaiters.push(onWake);
+      if (signal) {
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+    });
+  }
+
+  private releaseThumbnailSlot(): void {
+    this.activeThumbnailRenders = Math.max(0, this.activeThumbnailRenders - 1);
+    this.drainThumbnailQueue();
+  }
+
+  private drainThumbnailQueue(): void {
+    while (this.thumbnailWaiters.length > 0 && this.canStartThumbnailRender()) {
+      const next = this.thumbnailWaiters.shift();
+      if (!next) break;
+      this.activeThumbnailRenders += 1;
+      next(true);
+    }
+  }
+
+  private flushThumbnailWaiters(): void {
+    const waiters = this.thumbnailWaiters.splice(0, this.thumbnailWaiters.length);
+    for (const wake of waiters) {
+      wake(false);
+    }
+  }
+
+  private async renderOffscreenPage({
+    pageNumber,
+    bounds,
+    expectedVersion,
+    cacheKey,
+    maxDpr,
+    trackActiveTask,
+    signal,
+  }: OffscreenRenderOptions): Promise<RenderedPageEntry | null> {
+    if (!this.doc || signal?.aborted) return null;
 
     const page = await this.doc.getPage(pageNumber);
-    if (expectedVersion !== this.docVersion) return null;
+    if (expectedVersion !== this.docVersion || signal?.aborted) return null;
 
     const baseViewport = page.getViewport({ scale: 1 });
     const fitScale = Math.min(
       bounds.width / baseViewport.width,
       bounds.height / baseViewport.height
     );
-    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO);
+    const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
 
     const cssWidth = Math.max(1, Math.floor(baseViewport.width * fitScale));
     const cssHeight = Math.max(1, Math.floor(baseViewport.height * fitScale));
@@ -200,21 +385,36 @@ export class PdfEngine {
       this.activeRenderTask = renderTask;
     }
 
+    const onAbort = () => {
+      try {
+        renderTask.cancel();
+      } catch {
+        // already finished
+      }
+    };
+    if (signal) {
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+
     try {
       await renderTask.promise;
     } catch (err) {
       if (isCancelledRenderError(err)) return null;
       throw err;
     } finally {
+      if (signal) {
+        signal.removeEventListener('abort', onAbort);
+      }
       if (trackActiveTask && this.activeRenderTask === renderTask) {
         this.activeRenderTask = null;
+        this.drainThumbnailQueue();
       }
     }
 
-    if (expectedVersion !== this.docVersion) return null;
+    if (expectedVersion !== this.docVersion || signal?.aborted) return null;
 
     return {
-      key: this.buildCacheKey(pageNumber, bounds),
+      key: cacheKey,
       canvas: offscreen,
       cssWidth,
       cssHeight,
@@ -240,12 +440,14 @@ export class PdfEngine {
         if (this.cache.has(key)) continue;
 
         try {
-          const entry = await this.renderToOffscreen(
-            pageNum,
+          const entry = await this.renderOffscreenPage({
+            pageNumber: pageNum,
             bounds,
             expectedVersion,
-            false
-          );
+            cacheKey: key,
+            maxDpr: MAX_DEVICE_PIXEL_RATIO,
+            trackActiveTask: false,
+          });
           if (entry) {
             this.cache.set(entry);
           }
@@ -257,14 +459,17 @@ export class PdfEngine {
   }
 }
 
-function blitToTargetCanvas(
+function blitToCanvas(
   entry: RenderedPageEntry,
-  targetCanvas: HTMLCanvasElement
+  targetCanvas: HTMLCanvasElement,
+  applyCssSize: boolean
 ): void {
   targetCanvas.width = entry.canvas.width;
   targetCanvas.height = entry.canvas.height;
-  targetCanvas.style.width = `${entry.cssWidth}px`;
-  targetCanvas.style.height = `${entry.cssHeight}px`;
+  if (applyCssSize) {
+    targetCanvas.style.width = `${entry.cssWidth}px`;
+    targetCanvas.style.height = `${entry.cssHeight}px`;
+  }
 
   const ctx = targetCanvas.getContext('2d', { alpha: false });
   if (!ctx) return;

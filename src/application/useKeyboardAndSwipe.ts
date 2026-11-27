@@ -8,6 +8,7 @@ interface UseKeyboardAndSwipeOptions {
   onFirst: () => void;
   onLast: () => void;
   onToggleFullscreen: () => void;
+  onToggleSlideGrid?: () => void;
 }
 
 const SWIPE_THRESHOLD_PX = 48;
@@ -26,6 +27,37 @@ function isModalDialogOpen(): boolean {
   return Boolean(document.querySelector('dialog[open]'));
 }
 
+export type PresentationShortcutAction =
+  'next' | 'prev' | 'first' | 'last' | 'toggle_fullscreen' | 'toggle_slide_grid';
+
+export function resolvePresentationShortcut(
+  key: string,
+  options: { repeat: boolean; totalPages: number }
+): PresentationShortcutAction | null {
+  switch (key) {
+    case 'ArrowRight':
+    case 'PageDown':
+    case ' ':
+      return 'next';
+    case 'ArrowLeft':
+    case 'PageUp':
+    case 'Backspace':
+      return 'prev';
+    case 'Home':
+      return options.totalPages > 0 ? 'first' : null;
+    case 'End':
+      return options.totalPages > 0 ? 'last' : null;
+    case 'f':
+    case 'F':
+      return options.repeat ? null : 'toggle_fullscreen';
+    case 'g':
+    case 'G':
+      return options.repeat ? null : 'toggle_slide_grid';
+    default:
+      return null;
+  }
+}
+
 export function useKeyboardAndSwipe({
   enabled,
   totalPages,
@@ -34,6 +66,7 @@ export function useKeyboardAndSwipe({
   onFirst,
   onLast,
   onToggleFullscreen,
+  onToggleSlideGrid,
 }: UseKeyboardAndSwipeOptions) {
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -48,42 +81,54 @@ export function useKeyboardAndSwipe({
 
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      switch (e.key) {
-        case 'ArrowRight':
-        case 'PageDown':
-        case ' ':
+      const action = resolvePresentationShortcut(e.key, {
+        repeat: e.repeat,
+        totalPages,
+      });
+      if (!action) return;
+
+      switch (action) {
+        case 'next':
           e.preventDefault();
           onNext();
           break;
-        case 'ArrowLeft':
-        case 'PageUp':
-        case 'Backspace':
+        case 'prev':
           e.preventDefault();
           onPrev();
           break;
-        case 'Home':
-          if (totalPages > 0) {
-            e.preventDefault();
-            onFirst();
-          }
+        case 'first':
+          e.preventDefault();
+          onFirst();
           break;
-        case 'End':
-          if (totalPages > 0) {
-            e.preventDefault();
-            onLast();
-          }
+        case 'last':
+          e.preventDefault();
+          onLast();
           break;
-        case 'f':
-        case 'F':
+        case 'toggle_fullscreen':
           e.preventDefault();
           onToggleFullscreen();
+          break;
+        case 'toggle_slide_grid':
+          if (onToggleSlideGrid) {
+            e.preventDefault();
+            onToggleSlideGrid();
+          }
           break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [enabled, totalPages, onNext, onPrev, onFirst, onLast, onToggleFullscreen]);
+  }, [
+    enabled,
+    totalPages,
+    onNext,
+    onPrev,
+    onFirst,
+    onLast,
+    onToggleFullscreen,
+    onToggleSlideGrid,
+  ]);
 
   const swipeHandlers = {
     onTouchStart: (e: React.TouchEvent) => {
