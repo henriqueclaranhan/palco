@@ -5,10 +5,20 @@ const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
 ];
 
 const DEFAULT_PEER_ID_PREFIX = 'palco-v1-';
+const DEFAULT_ICE_ENDPOINT = '/api/ice';
+const DEFAULT_ICE_FETCH_TIMEOUT_MS = 4000;
 const DEFAULT_MAX_PDF_MB = 100;
 const DEFAULT_GUEST_CONNECT_TIMEOUT_MS = 14_000;
 const DEFAULT_MAX_RECONNECT_ATTEMPTS = 4;
 const DEFAULT_RECONNECT_DELAY_MS = 1800;
+
+export function parseIceEndpoint(raw: string | undefined): string | null {
+  if (raw === undefined) return DEFAULT_ICE_ENDPOINT;
+  const trimmed = raw.trim();
+  if (!trimmed) return DEFAULT_ICE_ENDPOINT;
+  if (/^(false|off|none|0)$/i.test(trimmed)) return null;
+  return trimmed;
+}
 
 export function parseIceServers(raw: string | undefined): RTCIceServer[] {
   const trimmed = raw?.trim();
@@ -35,7 +45,7 @@ export function parseIceServers(raw: string | undefined): RTCIceServer[] {
   return urls.length > 0 ? urls.map((url) => ({ urls: url })) : DEFAULT_ICE_SERVERS;
 }
 
-function isValidIceServer(value: unknown): value is RTCIceServer {
+export function isValidIceServer(value: unknown): value is RTCIceServer {
   if (typeof value !== 'object' || value === null) return false;
   const candidate = value as Record<string, unknown>;
   if (typeof candidate.urls === 'string' && candidate.urls.trim().length > 0) {
@@ -69,6 +79,11 @@ function parseOptionalBoolean(raw: string | undefined): boolean | undefined {
 const maxPdfMb = parsePositiveInt(import.meta.env.VITE_MAX_PDF_MB, DEFAULT_MAX_PDF_MB);
 
 export const env = {
+  iceEndpoint: parseIceEndpoint(import.meta.env.VITE_ICE_ENDPOINT),
+  iceFetchTimeoutMs: parsePositiveInt(
+    import.meta.env.VITE_ICE_FETCH_TIMEOUT_MS,
+    DEFAULT_ICE_FETCH_TIMEOUT_MS
+  ),
   iceServers: parseIceServers(import.meta.env.VITE_ICE_SERVERS),
   peerHost: import.meta.env.VITE_PEER_HOST?.trim() || undefined,
   peerPort: parseOptionalPort(import.meta.env.VITE_PEER_PORT),

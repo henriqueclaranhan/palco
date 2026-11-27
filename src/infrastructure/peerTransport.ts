@@ -1,5 +1,6 @@
 import Peer, { type DataConnection, type PeerOptions } from 'peerjs';
 import { env } from '@/config/env';
+import { resolveIceServers } from '@/infrastructure/iceServers';
 import {
   PROTOCOL_VERSION,
   parsePeerMessage,
@@ -22,10 +23,10 @@ function safeInvoke(fn: () => void): void {
   }
 }
 
-function buildPeerOptions(): PeerOptions {
+function buildPeerOptions(iceServers: RTCIceServer[]): PeerOptions {
   const options: PeerOptions = {
     debug: 0,
-    config: { iceServers: env.iceServers },
+    config: { iceServers },
   };
 
   if (env.peerHost) {
@@ -123,12 +124,20 @@ export class HostTransport {
   private peer: Peer | null = null;
   private readonly connections = new Map<string, TrackedConnection>();
   private readonly callbacks: HostTransportCallbacks;
+  private readonly initAbort = new AbortController();
   private heartbeatTimer: number | null = null;
   private destroyed = false;
 
   constructor(roomCode: string, callbacks: HostTransportCallbacks) {
     this.callbacks = callbacks;
-    const peer = new Peer(roomCodeToPeerId(roomCode), buildPeerOptions());
+    void this.init(roomCode);
+  }
+
+  private async init(roomCode: string): Promise<void> {
+    const iceServers = await resolveIceServers(this.initAbort.signal);
+    if (this.destroyed) return;
+
+    const peer = new Peer(roomCodeToPeerId(roomCode), buildPeerOptions(iceServers));
     this.peer = peer;
 
     peer.on('open', (id) => {
@@ -170,6 +179,7 @@ export class HostTransport {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.initAbort.abort();
     this.stopHeartbeat();
 
     for (const { conn } of this.connections.values()) {
@@ -310,14 +320,12 @@ export class GuestTransport {
   private peer: Peer | null = null;
   private conn: DataConnection | null = null;
   private readonly callbacks: GuestTransportCallbacks;
+  private readonly initAbort = new AbortController();
   private destroyed = false;
   private connectTimeoutId: number | null = null;
 
   constructor(roomCode: string, callbacks: GuestTransportCallbacks) {
     this.callbacks = callbacks;
-    const hostPeerId = roomCodeToPeerId(roomCode);
-    const peer = new Peer(buildPeerOptions());
-    this.peer = peer;
 
     this.connectTimeoutId = window.setTimeout(() => {
       if (!this.destroyed && (!this.conn || !this.conn.open)) {
@@ -326,6 +334,17 @@ export class GuestTransport {
         );
       }
     }, env.guestConnectTimeoutMs);
+
+    void this.init(roomCode);
+  }
+
+  private async init(roomCode: string): Promise<void> {
+    const iceServers = await resolveIceServers(this.initAbort.signal);
+    if (this.destroyed) return;
+
+    const hostPeerId = roomCodeToPeerId(roomCode);
+    const peer = new Peer(buildPeerOptions(iceServers));
+    this.peer = peer;
 
     peer.on('open', () => this.connectToHost(peer, hostPeerId));
     peer.on('error', (err) => this.handlePeerError(err.type));
@@ -340,6 +359,7 @@ export class GuestTransport {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.initAbort.abort();
     this.clearConnectTimeout();
 
     if (this.conn) {

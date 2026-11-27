@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { parseIceServers, parsePositiveInt } from '../env';
+import { parseIceEndpoint, parseIceServers, parsePositiveInt } from '../env';
 
 describe('env config parsers', () => {
+  it('parses ICE endpoint with default and disable keywords', () => {
+    expect(parseIceEndpoint(undefined)).toBe('/api/ice');
+    expect(parseIceEndpoint('  ')).toBe('/api/ice');
+    expect(parseIceEndpoint('/custom/ice')).toBe('/custom/ice');
+    expect(parseIceEndpoint('false')).toBeNull();
+    expect(parseIceEndpoint('OFF')).toBeNull();
+    expect(parseIceEndpoint('none')).toBeNull();
+  });
   it('parses comma-separated STUN URLs and falls back when empty', () => {
     expect(parseIceServers(undefined).length).toBeGreaterThan(0);
     expect(parseIceServers('  ').length).toBeGreaterThan(0);
